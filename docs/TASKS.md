@@ -69,6 +69,15 @@ Künftige Wünsche wieder hier sammeln und erst nach „go“ umsetzen.
       wirken – umgesetzt mit HA-2026.11-Sichtbarkeitsbedingungen (`visible`), ohne zweiten Schritt.
 - [x] Warnung, wenn Offset-Regelung und externer Temperatureingang zugleich gesetzt sind.
 
+## 0.4 – Einfache Schnittstelle („go“ Steven 2026-11-18)
+- [x] Zeitplan schreibt `climate.set_temperature` auf den Raum; Feld „Zeitwerk-Ziel“ entfernt (Reparaturhinweis für Altdaten)
+- [x] Fix: Zeitwerk-Ziel = eigene Klima-Entität → RecursionError (0.3.0); eigene Entitäten nicht wählbar
+- [x] Frei wählbare Fortsetzen-Aktion (Standard `zeitwerk.resume`, z. B. `scheduler.run_action`), auch für Dauer-Ende
+- [x] Manuell-Erkennung ohne Zeitwerk; Zeitwerk-Meldung wird angezeigt
+- [x] Plan-Erkennung über die Klima-Entität (Dialog + Start)
+- [x] Karte: Fortsetzen/Dauer nur mit Fortsetzen-Aktion
+- [x] Tests + Dev-Test gegen echtes Zeitwerk (Fall Steven: Plan 16 °C, manuell, Fortsetzen → Planwert)
+
 ## Offen / später
 - [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bewusst nicht in 0.1
 - [ ] Brand-Icons (`custom_components/heizwerk/brand/`)
@@ -83,9 +92,11 @@ Künftige Wünsche wieder hier sammeln und erst nach „go“ umsetzen.
 - HA 2026.11 ersetzt voluptuous durch probatio (Alias in `homeassistant/__init__`).
 - HA 2026.11: `ClimateEntity.temperature_unit/current_temperature/target_temperature`
   sind veraltet → `native_*` (Entfall 2027.11).
-- Zeitwerk erkennt manuelle Änderungen am Ziel über den Context. Seit 0.2 nutzt
-  Heizwerk genau das: Übersteuerungen werden ins Ziel geschrieben und sind in
-  Zeitwerk sichtbar (nicht bei „Nur beobachten“).
+- Zeitwerk erkennt manuelle Änderungen an seinen Zielen über den Context. Seit
+  0.4 ist das Ziel die Heizwerk-Klima-Entität selbst – Übersteuerungen aus der
+  Heizwerk-Karte sind dadurch ohne Zusatzlogik in Zeitwerk sichtbar.
+- Der HA-Aktionseditor im Dialog zeigt keinen Hilfetext (`data_description`) –
+  Erklärung steht deshalb in der Abschnittsbeschreibung.
 - Zeitwerk `zeitwerk/preview` antwortet mit `{plans: {plan_id: [...]}}` (im Dev-Test gefunden, Karte angepasst).
 - HA 2026.11 übernimmt `http:` aus YAML einmalig als *ausstehende* Konfiguration; ohne
   `http/config/promote` wird sie nach 5 min zurückgesetzt und HA startet neu.

@@ -14,20 +14,20 @@ sensor, locks, manual override and room-climate hints.
 
 ## Features
 
-- `climate.heizwerk_<room>` per room – current temperature from an external
-  sensor (fallback: mean of the TRV readings), target from a Zeitwerk target
-  entity (e.g. `input_number.temperaturspeicher_bad`).
+- `climate.heizwerk_<room>` per room – a plain thermostat: current temperature
+  from an external sensor (fallback: mean of the TRV readings); any scheduler
+  (Zeitwerk, Scheduler, automation) sets it with `climate.set_temperature`.
+  Works without a scheduler, too.
 - Correction (e.g. −0.5 K), *set-point* or *offset* regulation, 10 s debounce,
   only differing commands are sent, optional push of the room temperature to the
   TRV's external-temperature input (e.g. Sonoff TRVZB).
 - **Locks**: window open (delays), heating period off, summer lock (outdoor ≥
   16 °C for 10 min), any extra lock entity. Locked = thermostat off (frost
   protection in the device) or heat to a frost temperature.
-- **Manual override** until the next Zeitwerk change or for 1 h / 3 h / any
-  duration; resume at any time. With a Zeitwerk target and plan (and observe-only
-  off) the override is written to the Zeitwerk target, so Zeitwerk shows it as a
-  manual change and ends it with the next block; in observe-only mode the target
-  is never touched.
+- **Manual override** from the card (± or drag) until the scheduler's next value
+  or for 1 h / 3 h; **Resume** runs a configurable action (default with a
+  Zeitwerk plan: `zeitwerk.resume`; for Scheduler e.g. `scheduler.run_action`)
+  and reloads the plan. Zeitwerk shows Heizwerk overrides as manual changes.
 - **Room climate**: dew point, wall humidity with mold level, airing
   recommendation and "aired enough" event.
 - **Card** `custom:heizwerk-card`, registered automatically – standard room card
@@ -43,6 +43,21 @@ sensor, locks, manual override and room-climate hints.
 4. On the Heizwerk entry: **Add room** – name, thermostats, room sensor and
    Zeitwerk target on top; everything optional in collapsible sections, each
    setting with a help text. The Zeitwerk plan is detected automatically.
+
+## Connecting a scheduler
+
+```yaml
+# Zeitwerk profile action (or Scheduler / automation action)
+action: climate.set_temperature
+target:
+  entity_id: climate.heizwerk_bad
+data:
+  temperature: 21
+```
+
+That is the whole interface. Leave the room's resume action empty to use
+`zeitwerk.resume` for the detected plan, or set your own (e.g.
+`scheduler.run_action` with the schedule switch).
 
 ## Card
 
@@ -108,6 +123,12 @@ Korrektur, Sperren (Fenster, Heizperiode, Sommerabschaltung, eigene Sperren),
 manueller Übersteuerung (bis nächster Block / 1 Std. / 3 Std., auch in Zeitwerk
 sichtbar) und Raumklima
 (Taupunkt, Wandfeuchte, Lüftungsempfehlung).
+
+**Anbindung (ab 0.4):** Der Zeitplan (Zeitwerk, Scheduler, Automation) setzt den
+Raum direkt mit `climate.set_temperature` auf `climate.heizwerk_<raum>` – mehr
+Schnittstelle gibt es nicht; ohne Zeitplan ist Heizwerk ein normales Thermostat.
+„Fortsetzen“ führt eine frei wählbare Aktion aus (Standard mit Zeitwerk-Plan:
+`zeitwerk.resume`, für Scheduler z. B. `scheduler.run_action`).
 
 **Neue Räume starten im Modus „Nur beobachten“**: Heizwerk rechnet alles und
 zeigt in der Karte bzw. im Attribut `planned_commands`, was es senden würde, fasst

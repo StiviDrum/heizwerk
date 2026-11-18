@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0 – 2026-11-18
+
+**Breaking – simpler interface.** A scheduler (Zeitwerk, Scheduler, automation)
+now calls `climate.set_temperature` on `climate.heizwerk_<room>`; Heizwerk is a
+plain thermostat and works without any scheduler.
+
+- Removed the "Zeitwerk target" field and writing manual values to helpers.
+  An old value is ignored and reported as a repair issue (re-save the room
+  after switching the plan to `climate.set_temperature`).
+- Fixed: Zeitwerk target set to the room's own climate entity ended in a
+  `RecursionError` (0.3.0). Heizwerk's own entities can no longer be selected.
+- New room option "Resume action" (any HA action, e.g. `scheduler.run_action`);
+  empty with a detected Zeitwerk plan = `zeitwerk.resume`. Runs on "Resume" and
+  when a 1 h / 3 h override ends. Without it, resume and durations are hidden.
+- Manual overrides: Heizwerk card / `heizwerk.set_manual` mark the set-point as
+  manual; the next value from the scheduler ends it. Zeitwerk detects the change
+  itself and shows it; changes Zeitwerk reports are shown in Heizwerk too.
+- Zeitwerk plan auto-detected from the plan that writes the room's climate
+  entity (dialog and at start). New attribute `resume_available`; removed
+  `scheduled_target`, `target_entity`, `manual_source`.
+- Card: resume and duration pills only when a resume action exists; "Start
+  set-point" moved to "Set-points & limits".
+
 ## 0.3.0 – 2026-11-18
 
 - Room dialog: required and important fields first (name, thermostats, room

@@ -43,7 +43,6 @@ SHELL = Path(
 # Missing system libs (libnss3, libnspr4)? Extract them without root
 # (apt-get download + dpkg -x) and point HEIZWERK_CHROME_LIBS at the .so dir.
 LIBS = os.environ.get("HEIZWERK_CHROME_LIBS", "")
-TARGET_BAD = "input_number.temperaturspeicher_bad"
 PROFILE_BAD = "sensor.zeitwerk_heizung_bad_profile"
 DEV_USER = {"username": "dev", "password": "dev-dev-dev"}
 
@@ -57,9 +56,9 @@ PLAN = {
             "color": "#ff7043",
             "actions": [
                 {
-                    "action": "input_number.set_value",
-                    "target": {"entity_id": "input_number.temperaturspeicher_bad"},
-                    "data": {"value": 22},
+                    "action": "climate.set_temperature",
+                    "target": {"entity_id": "climate.heizwerk_bad"},
+                    "data": {"temperature": 22},
                 }
             ],
         },
@@ -69,9 +68,9 @@ PLAN = {
             "color": "#42a5f5",
             "actions": [
                 {
-                    "action": "input_number.set_value",
-                    "target": {"entity_id": "input_number.temperaturspeicher_bad"},
-                    "data": {"value": 18},
+                    "action": "climate.set_temperature",
+                    "target": {"entity_id": "climate.heizwerk_bad"},
+                    "data": {"temperature": 18},
                 }
             ],
         },
@@ -110,7 +109,6 @@ ROOMS = [
         "windows": ["binary_sensor.fenster_bad"],
         "window_open_delay": 5,
         "window_close_delay": 5,
-        "target_entity": "input_number.temperaturspeicher_bad",
         "zeitwerk_plan": "heizung_bad",
         "lock_mode": "off",
         "frost_temperature": 7,
@@ -132,7 +130,6 @@ ROOMS = [
         "windows": ["binary_sensor.fenster_kueche"],
         "window_open_delay": 5,
         "window_close_delay": 5,
-        "target_entity": "input_number.temperaturspeicher_kueche",
         "lock_entities": ["input_boolean.sim_sperre_kueche"],
         "lock_mode": "frost",
         "frost_temperature": 7,
@@ -301,10 +298,10 @@ async def dialog_checks(api: Api) -> list[str]:
         if not cond:
             fails.append(msg)
 
-    res = await reconfigure(lambda d: d["zeitwerk"].pop("zeitwerk_plan", None))
+    res = await reconfigure(lambda d: d["schedule"].pop("zeitwerk_plan", None))
     print("  Dialog oben:", res["_top"])
     check(
-        res["_top"][:4] == ["name", "trvs", "temperature_sensor", "target_entity"],
+        res["_top"][:4] == ["name", "trvs", "temperature_sensor", "observe_only"],
         "Pflicht/wichtig oben",
     )
     check(res.get("type") == "abort", "Raum ändern ohne Plan gespeichert")
@@ -322,6 +319,136 @@ async def dialog_checks(api: Api) -> list[str]:
         f"Warnung Offset + externer Eingang ({res.get('errors')})",
     )
     return fails
+
+
+async def direct_plan_check(api: Api) -> list[str]:
+    """Zeitwerk writes climate.set_temperature to a Heizwerk room directly."""
+    fails: list[str] = []
+
+    def check(cond: bool, msg: str) -> None:
+        print(("  ok  " if cond else "  FAIL ") + msg)
+        if not cond:
+            fails.append(msg)
+
+    entry = (await entries(api, "heizwerk"))[0]["entry_id"]
+    room = {
+        "name": "Direkt",
+        "trvs": ["climate.trv_kueche"],
+        "temperature_sensor": "sensor.kueche_temperatur",
+        "observe_only": True,
+    }
+    flow = await api.post(
+        "/api/config/config_entries/subentries/flow", {"handler": [entry, "room"]}
+    )
+    res = await api.post(
+        f"/api/config/config_entries/subentries/flow/{flow['flow_id']}",
+        {**form_values(flow["data_schema"]), **room},
+    )
+    check(
+        res.get("type") == "create_entry",
+        f"Testraum ohne Zeitwerk-Ziel angelegt ({res.get('errors')})",
+    )
+    await asyncio.sleep(4)
+    climate = "climate.heizwerk_direkt"
+    plan = {
+        "id": "heizwerk_direkt_test",
+        "name": "Heizwerk Direkt Test",
+        "profiles": [
+            {
+                "id": "warm",
+                "name": "Warm",
+                "actions": [
+                    {
+                        "action": "climate.set_temperature",
+                        "target": {"entity_id": climate},
+                        "data": {"temperature": 21.5},
+                    }
+                ],
+            }
+        ],
+        "default_profile": "warm",
+        "week": {
+            "day_types": [
+                {
+                    "id": "all",
+                    "name": "Alle",
+                    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+                    "blocks": [],
+                }
+            ]
+        },
+    }
+    created = await api.ws({"type": "zeitwerk/plans/create", "plan": plan})
+    check(bool(created[0].get("success")), f"Zeitwerk-Plan auf {climate} angelegt")
+    await api.call("zeitwerk", "apply", plan=["heizwerk_direkt_test"])
+    await asyncio.sleep(3)
+    st = await api.state(climate)
+    check(
+        st["attributes"].get("temperature") == 21.5,
+        "Zeitwerk setzt climate.heizwerk_direkt auf 21,5",
+    )
+    check(st["attributes"].get("status") != "manual", "kein Fehlalarm 'manuell'")
+    logs = await api.ws({"type": "system_log/list"})
+    rec = [e for e in logs[0]["result"] if "RecursionError" in json.dumps(e)]
+    check(not rec, "keine RecursionError im Log")
+    # Clean up the dev-only test objects.
+    await api.ws({"type": "zeitwerk/plans/delete", "plan_id": "heizwerk_direkt_test"})
+    subs = await api.ws({"type": "config_entries/subentries/list", "entry_id": entry})
+    sid = next(
+        (x["subentry_id"] for x in subs[0]["result"] if x["title"] == "Direkt"), None
+    )
+    if sid:
+        await api.ws(
+            {
+                "type": "config_entries/subentries/delete",
+                "entry_id": entry,
+                "subentry_id": sid,
+            }
+        )
+    return fails
+
+
+async def migrate_04(api: Api) -> None:
+    """Dev instance from 0.3: plan writes the room directly, rooms drop target."""
+    plans = await api.ws({"type": "zeitwerk/plans/get", "plan_id": "heizung_bad"})
+    plan = plans[0].get("result") or {}
+    if "input_number" in json.dumps(plan.get("profiles", [])):
+        res = await api.ws(
+            {
+                "type": "zeitwerk/plans/update",
+                "plan_id": "heizung_bad",
+                "plan": {**plan, "profiles": PLAN["profiles"]},
+            }
+        )
+        print(
+            "plan heizung_bad -> climate.heizwerk_bad:",
+            res[0].get("success"),
+            res[0].get("error", ""),
+        )
+    hw = await entries(api, "heizwerk")
+    if not hw:
+        return
+    entry = hw[0]["entry_id"]
+    issues = await api.ws({"type": "repairs/list_issues"})
+    legacy = {
+        i["issue_id"]
+        for i in issues[0]["result"]["issues"]
+        if i["domain"] == "heizwerk"
+    }
+    subs = await api.ws({"type": "config_entries/subentries/list", "entry_id": entry})
+    for sub in subs[0]["result"]:
+        if f"target_entity_{sub['subentry_id']}" not in legacy:
+            continue
+        flow = await api.post(
+            "/api/config/config_entries/subentries/flow",
+            {"handler": [entry, "room"], "subentry_id": sub["subentry_id"]},
+        )
+        res = await api.post(
+            f"/api/config/config_entries/subentries/flow/{flow['flow_id']}",
+            form_values(flow["data_schema"]),
+        )
+        print("room", sub["title"], "re-saved:", res.get("type"), res.get("errors", ""))
+    await asyncio.sleep(4)
 
 
 async def setup(api: Api) -> None:
@@ -395,7 +522,7 @@ async def scenarios(api: Api) -> list[str]:
     await api.call("zeitwerk", "resume", plan=["heizung_bad"])
     await api.call("heizwerk", "resume", entity_id=[bad, kue])
     await asyncio.sleep(12)
-    plan_value = float((await api.state(TARGET_BAD))["state"])
+    plan_value = float((await api.state(bad))["attributes"]["temperature"])
     st = await api.state(bad)
     show(
         "Bad",
@@ -465,7 +592,7 @@ async def scenarios(api: Api) -> list[str]:
         "input_boolean", "turn_off", entity_id="input_boolean.sim_sperre_kueche"
     )
 
-    # Manual override through Zeitwerk (visible there)
+    # Manual override: Heizwerk sets its set-point, Zeitwerk notices it.
     async def zw_manual() -> bool:
         attrs = (await api.state(PROFILE_BAD)).get("attributes", {})
         return bool(attrs.get("manual_override"))
@@ -478,22 +605,17 @@ async def scenarios(api: Api) -> list[str]:
         st,
         "status",
         "temperature",
-        "scheduled_target",
         "manual_until",
         "manual_by",
-        "manual_source",
+        "resume_available",
     )
-    check(
-        float((await api.state(TARGET_BAD))["state"]) == 23.5,
-        "Manuell: Wert im Zeitwerk-Ziel",
-    )
+    check(st["attributes"]["temperature"] == 23.5, "Manuell: Sollwert 23,5")
     check(await zw_manual(), "Zeitwerk zeigt manuelle Übersteuerung")
     check(st["attributes"]["status"] == "manual", "Heizwerk: Status manual")
-    check(st["attributes"]["manual_source"] == "zeitwerk", "Heizwerk: Quelle zeitwerk")
     check(st["attributes"]["manual_by"] == "Dev", "Heizwerk: Benutzer erkannt")
     check(
-        st["attributes"]["scheduled_target"] == plan_value,
-        "Heizwerk: Planwert bleibt sichtbar",
+        st["attributes"]["resume_available"] is True,
+        "Fortsetzen verfügbar (Plan erkannt)",
     )
     await asyncio.sleep(11)
     trv = await api.state("climate.trv_bad")
@@ -501,7 +623,20 @@ async def scenarios(api: Api) -> list[str]:
         trv["attributes"]["temperature"] == 23.0, "TRV Bad folgt Übersteuerung (23,0)"
     )
 
+    # Resume in Heizwerk reloads the plan (Steven: plan 16, manual, resume -> plan)
+    await api.call("heizwerk", "resume", entity_id=bad)
+    await asyncio.sleep(2)
+    st = await api.state(bad)
+    check(
+        st["attributes"]["temperature"] == plan_value,
+        f"Fortsetzen lädt Planwert {plan_value}",
+    )
+    check(st["attributes"]["status"] != "manual", "Fortsetzen beendet manuell")
+    check(not await zw_manual(), "Zeitwerk: Übersteuerung beendet")
+
     # "Next block": Zeitwerk applies another profile
+    await api.call("heizwerk", "set_manual", entity_id=bad, temperature=24)
+    await asyncio.sleep(2)
     other = (
         "eco"
         if (await api.state(PROFILE_BAD))["attributes"].get("profile_id") == "comfort"
@@ -520,54 +655,50 @@ async def scenarios(api: Api) -> list[str]:
         st["attributes"]["status"] != "manual",
         "Neuer Zeitwerk-Block beendet Übersteuerung",
     )
-    check(not await zw_manual(), "Zeitwerk: Übersteuerung beendet")
+    check(st["attributes"]["temperature"] != 24, "Neuer Block setzt seinen Wert")
     await api.call("zeitwerk", "clear_force", plan="heizung_bad")
     await api.call("zeitwerk", "resume", plan=["heizung_bad"])
-    await asyncio.sleep(1)
-
-    # Resume from Heizwerk ends it in Zeitwerk too
-    await api.call("heizwerk", "set_manual", entity_id=bad, temperature=24)
     await asyncio.sleep(2)
-    await api.call("heizwerk", "resume", entity_id=bad)
-    await asyncio.sleep(2)
-    check(not await zw_manual(), "Heizwerk-Fortsetzen beendet Zeitwerk-Übersteuerung")
-    check(
-        float((await api.state(TARGET_BAD))["state"]) == plan_value,
-        "Planwert wieder im Ziel",
-    )
 
-    # Override started in Zeitwerk (target changed outside Zeitwerk)
-    await api.call("input_number", "set_value", entity_id=TARGET_BAD, value=21)
+    # Changed outside the card (e.g. more-info dialog): Zeitwerk reports it
+    await api.call("climate", "set_temperature", entity_id=bad, temperature=21)
     await asyncio.sleep(2)
     st = await api.state(bad)
     check(
-        st["attributes"]["status"] == "manual"
-        and st["attributes"]["manual_source"] == "zeitwerk",
-        "Übersteuerung aus Zeitwerk wird in Heizwerk angezeigt",
+        st["attributes"]["status"] == "manual",
+        "Änderung außerhalb der Karte: manuell (von Zeitwerk)",
     )
-    await api.call("zeitwerk", "resume", plan=["heizung_bad"])
-    await asyncio.sleep(1)
+    await api.call("heizwerk", "resume", entity_id=bad)
+    await asyncio.sleep(2)
 
-    # Duration: ends via zeitwerk.resume
+    # Duration: resume action after 1 min
     await api.call(
         "heizwerk", "set_manual", entity_id=bad, temperature=23, duration={"minutes": 1}
     )
     await asyncio.sleep(2)
-    check(await zw_manual(), "Dauer 1 min: Zeitwerk zeigt Übersteuerung")
-    await asyncio.sleep(63)
-    check(not await zw_manual(), "Dauer abgelaufen: Zeitwerk-Übersteuerung beendet")
     check(
-        float((await api.state(TARGET_BAD))["state"]) == plan_value,
+        (await api.state(bad))["attributes"]["manual_mode"] == "duration",
+        "Dauer 1 min aktiv",
+    )
+    await asyncio.sleep(63)
+    st = await api.state(bad)
+    check(
+        st["attributes"]["temperature"] == plan_value,
         "Dauer abgelaufen: Planwert zurück",
     )
+    check(not await zw_manual(), "Dauer abgelaufen: Zeitwerk-Übersteuerung beendet")
 
-    # Observe-only room never writes its target
-    before = (await api.state("input_number.temperaturspeicher_kueche"))["state"]
-    await api.call("heizwerk", "set_manual", entity_id=kue, temperature=21)
-    await asyncio.sleep(1)
-    after = (await api.state("input_number.temperaturspeicher_kueche"))["state"]
-    check(before == after, "Nur beobachten: Ziel der Küche unverändert")
-    await api.call("heizwerk", "resume", entity_id=kue)
+    # Room without scheduler: plain thermostat, no resume
+    kst = await api.state(kue)
+    check(
+        kst["attributes"]["resume_available"] is False,
+        "Küche ohne Plan: kein Fortsetzen",
+    )
+
+    # No repair issues left after the migration
+    issues = await api.ws({"type": "repairs/list_issues"})
+    hw = [i for i in issues[0]["result"]["issues"] if i["domain"] == "heizwerk"]
+    check(not hw, f"keine Heizwerk-Reparaturhinweise ({[i['issue_id'] for i in hw]})")
 
     # Zeitwerk interfaces
     prof = await api.state("sensor.zeitwerk_heizung_bad_profile")
@@ -962,8 +1093,11 @@ async def main() -> int:
         print("http config promoted:", res[0].get("success"), res[0].get("error", ""))
         await setup(api)
         await asyncio.sleep(3)
+        await migrate_04(api)
         print("Dialog:")
         fails = await dialog_checks(api)
+        print("Zeitwerk direkt auf Heizwerk:")
+        fails += await direct_plan_check(api)
         print("Scenarios:")
         fails += await scenarios(api)
         if SHOTS:
