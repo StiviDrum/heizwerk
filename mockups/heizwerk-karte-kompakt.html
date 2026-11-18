@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heizwerk-Karte – Kompakt</title>
+<!-- claude: 2026-11-18 – Mockup Heizwerk-Karte, kompakte Variante (Einzelkachel + aufklappbare Hausliste). Nur Entwurf, nichts in Home Assistant. Beispieldaten. -->
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+.theme{--page:#EEF0F3;--card:#FFFFFF;--tx:#15171A;--tx2:#5A616B;--line:#E2E5EA;--track:#E6E9EE;--heat:#B85500;--heatf:#F08A24;--blue:#1F5FC4;--teal:#0B7A70;--amber:#8A5300;--red:#B42318;--green:#2E7D32;--violet:#5B3FC4;--eco:#4D6A86;
+  background:var(--page);color:var(--tx);padding:28px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.theme.dark{--page:#0E1014;--card:#191C22;--tx:#ECEEF1;--tx2:#A2A9B3;--line:#2A2F37;--track:#2C313A;--heat:#FF9F4A;--heatf:#FF9F4A;--blue:#7AA8FF;--teal:#45C9BA;--amber:#F2B84B;--red:#FF7A70;--green:#6BCB77;--violet:#B3A1FF;--eco:#9DB4CC}
+.wrap{display:flex;flex-wrap:wrap}
+.wrap .theme{flex:1 1 380px}
+.lbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--tx2)}
+.sec{font-size:12px;color:var(--tx2);margin-top:8px}
+svg.i{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+.tile,.card{max-width:420px;width:100%;margin:0 auto}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:12px;min-height:64px}
+.ic{flex:none;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--c)}
+.nm{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.nm b{font-size:14px;font-weight:600}
+.nm span{font-size:12.5px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp{display:flex;flex-direction:column;align-items:flex-end}
+.tp b{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+.tp span{font-size:12px;color:var(--tx2);font-variant-numeric:tabular-nums}
+.step{display:flex;flex-direction:column;gap:2px}
+.step button{width:44px;height:24px;border:1px solid var(--line);background:var(--card);color:var(--tx);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px 16px;display:flex;flex-direction:column}
+.hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin:2px 4px 8px}
+h2{margin:0;font-size:16px;font-weight:600}
+.sub{font-size:12px;color:var(--tx2)}
+.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.bd{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
+.rw{border-top:1px solid var(--line)}
+.sum{list-style:none;display:flex;align-items:center;gap:12px;padding:8px 4px;min-height:52px;cursor:pointer}
+.sum::-webkit-details-marker{display:none}
+.chev{color:var(--tx2);transition:transform .15s}
+.rw[open] .chev{transform:rotate(180deg)}
+.det{padding:2px 4px 12px 52px;display:flex;flex-direction:column;gap:10px}
+.mini{position:relative;height:6px;border-radius:3px;background:var(--track)}
+.mini i{position:absolute;top:0;bottom:0;border-radius:3px}
+.mini em{position:absolute;top:-3px;width:3px;height:12px;border-radius:2px;background:var(--tx)}
+.kv{font-size:12.5px;color:var(--tx2)}
+.act{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.act .step{flex-direction:row;gap:6px}
+.act .step button{width:44px;height:36px}
+.pillrow{display:flex;gap:6px;flex-wrap:wrap}
+.pill{min-height:36px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--tx);font:inherit;font-size:12.5px;cursor:pointer}
+.pill.on{border-color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);color:var(--violet);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="theme">
+<div class="lbl">Kompakt · Hell</div>
+<div class="sec">Einzelkachel (eine Zeile, ca. 70 px hoch)</div>
+<div class="tile">
+<span class="ic" style="--c:var(--heat)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg></span>
+<span class="nm"><b>Küche</b><span>Heizt</span></span>
+<span class="tp"><b>17,5°</b><span>Ziel 18°</span></span>
+<span class="step"><button aria-label="Küche: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Küche: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div><div class="tile">
+<span class="ic" style="--c:var(--blue)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5.5 3h13A1.5 1.5 0 0 1 20 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3zM12 3v18M4 12h16"/></svg></span>
+<span class="nm"><b>Bad</b><span>Fenster offen · pausiert</span></span>
+<span class="tp"><b>18,5°</b><span>Ziel 22°</span></span>
+<span class="step"><button aria-label="Bad: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Bad: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div><div class="tile">
+<span class="ic" style="--c:var(--violet)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 21c1-4 4-6 8-6s7 2 8 6"/></svg></span>
+<span class="nm"><b>Büro</b><span>Manuell 23° von Steven · bis 11:00</span></span>
+<span class="tp"><b>17,3°</b><span>Ziel 23°</span></span>
+<span class="step"><button aria-label="Büro: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Büro: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div><div class="tile">
+<span class="ic" style="--c:var(--red)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 4l9 16H3zM12 10v4M12 17.5v.01"/></svg></span>
+<span class="nm"><b>Schlafzimmer</b><span>TRV seit 6 min nicht erreichbar</span></span>
+<span class="tp"><b>16,1°</b><span>Ziel 18°</span></span>
+<span class="step"><button aria-label="Schlafzimmer: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Schlafzimmer: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div>
+<div class="sec">Hausliste (Zeilen aufklappbar, hier Bad offen)</div>
+<section class="card">
+<div class="hd"><div><h2>Heizung</h2><span class="sub">Heizperiode aktiv · Außen 8,9°</span></div>
+<span class="badges"><span class="bd" style="--c:var(--heat)"><svg class="i" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg>2 heizen</span><span class="bd" style="--c:var(--blue)"><svg class="i" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5.5 3h13A1.5 1.5 0 0 1 20 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3zM12 3v18M4 12h16"/></svg>1 Fenster</span></span></div>
+<details class="rw" open><summary class="sum">
+<span class="ic" style="--c:var(--blue)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5.5 3h13A1.5 1.5 0 0 1 20 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3zM12 3v18M4 12h16"/></svg></span>
+<span class="nm"><b>Bad</b><span>Fenster offen · pausiert</span></span>
+<span class="tp"><b>18,5°</b><span>Ziel 22°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:46.4%;background:color-mix(in srgb,var(--blue) 55%,transparent)"></i><em style="left:71.4%"></em></div>
+<div class="kv"><span>Feuchte 60 % · Wand 72 % · Komfort bis 07:30</span></div>
+<div class="act"><span class="step"><button aria-label="Bad: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Bad: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--heat)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg></span>
+<span class="nm"><b>Küche</b><span>Heizt</span></span>
+<span class="tp"><b>17,5°</b><span>Ziel 18°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:39.3%;background:color-mix(in srgb,var(--heat) 55%,transparent)"></i><em style="left:42.9%"></em></div>
+<div class="kv"><span>Feuchte 55 % · konstant 18°</span></div>
+<div class="act"><span class="step"><button aria-label="Küche: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Küche: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--heat)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg></span>
+<span class="nm"><b>Schlafzimmer</b><span>Heizt</span></span>
+<span class="tp"><b>16,1°</b><span>Ziel 18°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:29.3%;background:color-mix(in srgb,var(--heat) 55%,transparent)"></i><em style="left:42.9%"></em></div>
+<div class="kv"><span>Feuchte 62 % · konstant 18° · Lüften empfohlen</span></div>
+<div class="act"><span class="step"><button aria-label="Schlafzimmer: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Schlafzimmer: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--green)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5 12l4 4 10-10"/></svg></span>
+<span class="nm"><b>Wohnzimmer</b><span>Erreicht · Komfort ab 11:45</span></span>
+<span class="tp"><b>18,0°</b><span>Ziel 18°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:42.9%;background:color-mix(in srgb,var(--green) 55%,transparent)"></i><em style="left:42.9%"></em></div>
+<div class="kv"><span>Feuchte 55 % · Vorlauf ab 09:45</span></div>
+<div class="act"><span class="step"><button aria-label="Wohnzimmer: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Wohnzimmer: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--eco)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></span>
+<span class="nm"><b>Büro</b><span>Abgesenkt bis Mi 05:15</span></span>
+<span class="tp"><b>17,3°</b><span>Ziel 16°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:37.9%;background:color-mix(in srgb,var(--eco) 55%,transparent)"></i><em style="left:28.6%"></em></div>
+<div class="kv"><span>Feuchte 55 % · Absenkung 16°</span></div>
+<div class="act"><span class="step"><button aria-label="Büro: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Büro: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details>
+</section>
+</div>
+<div class="theme dark">
+<div class="lbl">Kompakt · Dunkel</div>
+<div class="sec">Einzelkachel (eine Zeile, ca. 70 px hoch)</div>
+<div class="tile">
+<span class="ic" style="--c:var(--heat)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg></span>
+<span class="nm"><b>Küche</b><span>Heizt</span></span>
+<span class="tp"><b>17,5°</b><span>Ziel 18°</span></span>
+<span class="step"><button aria-label="Küche: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Küche: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div><div class="tile">
+<span class="ic" style="--c:var(--blue)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5.5 3h13A1.5 1.5 0 0 1 20 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3zM12 3v18M4 12h16"/></svg></span>
+<span class="nm"><b>Bad</b><span>Fenster offen · pausiert</span></span>
+<span class="tp"><b>18,5°</b><span>Ziel 22°</span></span>
+<span class="step"><button aria-label="Bad: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Bad: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div><div class="tile">
+<span class="ic" style="--c:var(--violet)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 21c1-4 4-6 8-6s7 2 8 6"/></svg></span>
+<span class="nm"><b>Büro</b><span>Manuell 23° von Steven · bis 11:00</span></span>
+<span class="tp"><b>17,3°</b><span>Ziel 23°</span></span>
+<span class="step"><button aria-label="Büro: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Büro: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div><div class="tile">
+<span class="ic" style="--c:var(--red)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 4l9 16H3zM12 10v4M12 17.5v.01"/></svg></span>
+<span class="nm"><b>Schlafzimmer</b><span>TRV seit 6 min nicht erreichbar</span></span>
+<span class="tp"><b>16,1°</b><span>Ziel 18°</span></span>
+<span class="step"><button aria-label="Schlafzimmer: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Schlafzimmer: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span>
+</div>
+<div class="sec">Hausliste (Zeilen aufklappbar, hier Bad offen)</div>
+<section class="card">
+<div class="hd"><div><h2>Heizung</h2><span class="sub">Heizperiode aktiv · Außen 8,9°</span></div>
+<span class="badges"><span class="bd" style="--c:var(--heat)"><svg class="i" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg>2 heizen</span><span class="bd" style="--c:var(--blue)"><svg class="i" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5.5 3h13A1.5 1.5 0 0 1 20 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3zM12 3v18M4 12h16"/></svg>1 Fenster</span></span></div>
+<details class="rw" open><summary class="sum">
+<span class="ic" style="--c:var(--blue)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5.5 3h13A1.5 1.5 0 0 1 20 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3zM12 3v18M4 12h16"/></svg></span>
+<span class="nm"><b>Bad</b><span>Fenster offen · pausiert</span></span>
+<span class="tp"><b>18,5°</b><span>Ziel 22°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:46.4%;background:color-mix(in srgb,var(--blue) 55%,transparent)"></i><em style="left:71.4%"></em></div>
+<div class="kv"><span>Feuchte 60 % · Wand 72 % · Komfort bis 07:30</span></div>
+<div class="act"><span class="step"><button aria-label="Bad: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Bad: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--heat)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg></span>
+<span class="nm"><b>Küche</b><span>Heizt</span></span>
+<span class="tp"><b>17,5°</b><span>Ziel 18°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:39.3%;background:color-mix(in srgb,var(--heat) 55%,transparent)"></i><em style="left:42.9%"></em></div>
+<div class="kv"><span>Feuchte 55 % · konstant 18°</span></div>
+<div class="act"><span class="step"><button aria-label="Küche: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Küche: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--heat)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z"/></svg></span>
+<span class="nm"><b>Schlafzimmer</b><span>Heizt</span></span>
+<span class="tp"><b>16,1°</b><span>Ziel 18°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:29.3%;background:color-mix(in srgb,var(--heat) 55%,transparent)"></i><em style="left:42.9%"></em></div>
+<div class="kv"><span>Feuchte 62 % · konstant 18° · Lüften empfohlen</span></div>
+<div class="act"><span class="step"><button aria-label="Schlafzimmer: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Schlafzimmer: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--green)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M5 12l4 4 10-10"/></svg></span>
+<span class="nm"><b>Wohnzimmer</b><span>Erreicht · Komfort ab 11:45</span></span>
+<span class="tp"><b>18,0°</b><span>Ziel 18°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:42.9%;background:color-mix(in srgb,var(--green) 55%,transparent)"></i><em style="left:42.9%"></em></div>
+<div class="kv"><span>Feuchte 55 % · Vorlauf ab 09:45</span></div>
+<div class="act"><span class="step"><button aria-label="Wohnzimmer: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Wohnzimmer: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details><details class="rw"><summary class="sum">
+<span class="ic" style="--c:var(--eco)"><svg class="i" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></span>
+<span class="nm"><b>Büro</b><span>Abgesenkt bis Mi 05:15</span></span>
+<span class="tp"><b>17,3°</b><span>Ziel 16°</span></span>
+<span class="chev" aria-hidden="true"><svg class="i" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+</summary><div class="det">
+<div class="mini"><i style="left:0;width:37.9%;background:color-mix(in srgb,var(--eco) 55%,transparent)"></i><em style="left:28.6%"></em></div>
+<div class="kv"><span>Feuchte 55 % · Absenkung 16°</span></div>
+<div class="act"><span class="step"><button aria-label="Büro: Ziel senken"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14"/></svg></button><button aria-label="Büro: Ziel erhöhen"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2"><path d="M5 12h14M12 5v14"/></svg></button></span><span class="pillrow"><button class="pill on">Bis nächster Block</button><button class="pill">1 Std.</button><button class="pill">3 Std.</button></span></div>
+</div></details>
+</section>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Test + dev environment: Home Assistant 2026.11 (minimum version, see hacs.json)
+# with its official test package, which pins homeassistant and the pytest plugins.
+pytest-homeassistant==2026.11.1
+# Required by the "frontend" dependency of the integration (matches HA 2026.11)
+home-assistant-frontend==20261028.4
+colorlog
+ruff

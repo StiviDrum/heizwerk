@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Start the local Heizwerk dev instance (http://localhost:8125) with ./config.
+# Simulated TRVs, sensors and windows are helpers (see config/configuration.yaml).
+# Zeitwerk is copied (read-only source) from ../zeitwerk if present.
+# Never points at a production Home Assistant. Stop with Ctrl+C.
+set -e
+source "$(dirname "$0")/_venv"
+
+(cd frontend && npm run build)
+mkdir -p config/custom_components
+rm -rf config/custom_components/heizwerk
+# Symlink, so a restart picks up backend changes.
+ln -s ../../custom_components/heizwerk config/custom_components/heizwerk
+
+ZEITWERK_SRC="${ZEITWERK_SRC:-../zeitwerk/custom_components/zeitwerk}"
+if [ -d "$ZEITWERK_SRC" ]; then
+  rm -rf config/custom_components/zeitwerk
+  # Copy (not symlink): the dev instance must never write into the Zeitwerk repo.
+  cp -r "$ZEITWERK_SRC" config/custom_components/zeitwerk
+  find config/custom_components/zeitwerk -name __pycache__ -prune -exec rm -rf {} +
+fi
+hass --config "${PWD}/config"

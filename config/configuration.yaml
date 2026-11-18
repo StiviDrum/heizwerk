@@ -1,0 +1,90 @@
+# Heizwerk dev instance – test bed with helpers only, no real devices.
+# Port 8125 so it can run next to the Zeitwerk/Läutwerk dev instances (8123).
+# HA 2026.11 imports `http:` once as a pending config; scripts/dev_check.py
+# confirms it (http/config/promote), otherwise HA reverts it after 5 min.
+default_config:
+
+http:
+  server_port: 8125
+
+homeassistant:
+  name: Heizwerk Dev
+  time_zone: Europe/Berlin
+  country: DE
+  unit_system: metric
+  latitude: 50.11
+  longitude: 8.68
+
+logger:
+  default: info
+  logs:
+    custom_components.heizwerk: debug
+
+# --- Inputs you move by hand to simulate the house ---------------------------
+input_number:
+  # Zeitwerk targets (the plans write these)
+  temperaturspeicher_bad: {name: Temperaturspeicher Bad, min: 5, max: 30, step: 0.5, unit_of_measurement: "°C", initial: 22}
+  temperaturspeicher_kueche: {name: Temperaturspeicher Küche, min: 5, max: 30, step: 0.5, unit_of_measurement: "°C", initial: 18}
+  # Room sensors
+  sim_bad_temperature: {name: Sim Bad Raumtemperatur, min: 5, max: 30, step: 0.1, unit_of_measurement: "°C", initial: 18.5}
+  sim_bad_humidity: {name: Sim Bad Feuchte, min: 20, max: 100, step: 1, unit_of_measurement: "%", initial: 60}
+  sim_bad_wall: {name: Sim Bad Wandtemperatur, min: 0, max: 30, step: 0.1, unit_of_measurement: "°C", initial: 15.6}
+  sim_kueche_temperature: {name: Sim Küche Raumtemperatur, min: 5, max: 30, step: 0.1, unit_of_measurement: "°C", initial: 17.5}
+  sim_kueche_humidity: {name: Sim Küche Feuchte, min: 20, max: 100, step: 1, unit_of_measurement: "%", initial: 55}
+  # TRV internal sensors (usually warmer, close to the radiator)
+  sim_trv_bad_temperature: {name: Sim TRV Bad Eigenmessung, min: 5, max: 35, step: 0.1, unit_of_measurement: "°C", initial: 20.5}
+  sim_trv_kueche_temperature: {name: Sim TRV Küche Eigenmessung, min: 5, max: 35, step: 0.1, unit_of_measurement: "°C", initial: 18.0}
+  # Outdoor
+  sim_outdoor_temperature: {name: Sim Außentemperatur, min: -20, max: 40, step: 0.1, unit_of_measurement: "°C", initial: 8.9}
+  sim_outdoor_humidity: {name: Sim Außenfeuchte, min: 0, max: 100, step: 1, unit_of_measurement: "%", initial: 80}
+  # Stand-in for a TRV "external temperature input" number
+  sim_trv_bad_external: {name: Sim TRV Bad externe Temperatur, min: 0, max: 40, step: 0.1, unit_of_measurement: "°C", initial: 0}
+
+input_boolean:
+  heizperiode: {name: Heizperiode, icon: mdi:radiator, initial: true}
+  sim_fenster_bad: {name: Sim Fenster Bad}
+  sim_fenster_kueche: {name: Sim Fenster Küche}
+  sim_sperre_kueche: {name: Sim Sperre Küche}
+  sim_trv_bad_valve: {name: Sim TRV Bad Ventil}
+  sim_trv_kueche_valve: {name: Sim TRV Küche Ventil}
+
+template:
+  - sensor:
+      - {name: Bad Temperatur, unique_id: sim_bad_t, device_class: temperature, unit_of_measurement: "°C", state_class: measurement, state: "{{ states('input_number.sim_bad_temperature') }}"}
+      - {name: Bad Feuchte, unique_id: sim_bad_h, device_class: humidity, unit_of_measurement: "%", state_class: measurement, state: "{{ states('input_number.sim_bad_humidity') }}"}
+      - {name: Bad Wandtemperatur, unique_id: sim_bad_w, device_class: temperature, unit_of_measurement: "°C", state_class: measurement, state: "{{ states('input_number.sim_bad_wall') }}"}
+      - {name: Kueche Temperatur, unique_id: sim_kueche_t, device_class: temperature, unit_of_measurement: "°C", state_class: measurement, state: "{{ states('input_number.sim_kueche_temperature') }}"}
+      - {name: Kueche Feuchte, unique_id: sim_kueche_h, device_class: humidity, unit_of_measurement: "%", state_class: measurement, state: "{{ states('input_number.sim_kueche_humidity') }}"}
+      - {name: TRV Bad Eigenmessung, unique_id: sim_trv_bad_t, device_class: temperature, unit_of_measurement: "°C", state: "{{ states('input_number.sim_trv_bad_temperature') }}"}
+      - {name: TRV Kueche Eigenmessung, unique_id: sim_trv_kueche_t, device_class: temperature, unit_of_measurement: "°C", state: "{{ states('input_number.sim_trv_kueche_temperature') }}"}
+      - {name: Außentemperatur, unique_id: sim_outdoor_t, device_class: temperature, unit_of_measurement: "°C", state_class: measurement, state: "{{ states('input_number.sim_outdoor_temperature') }}"}
+      - {name: Außenfeuchte, unique_id: sim_outdoor_h, device_class: humidity, unit_of_measurement: "%", state_class: measurement, state: "{{ states('input_number.sim_outdoor_humidity') }}"}
+  - binary_sensor:
+      - {name: Fenster Bad, unique_id: sim_window_bad, device_class: window, state: "{{ is_state('input_boolean.sim_fenster_bad', 'on') }}"}
+      - {name: Fenster Kueche, unique_id: sim_window_kueche, device_class: window, state: "{{ is_state('input_boolean.sim_fenster_kueche', 'on') }}"}
+
+# Simulated TRVs: generic thermostats on a helper "valve", measuring the TRV's
+# own (warmer) temperature like a real radiator thermostat.
+climate:
+  - platform: generic_thermostat
+    name: TRV Bad
+    unique_id: sim_trv_bad
+    heater: input_boolean.sim_trv_bad_valve
+    target_sensor: sensor.trv_bad_eigenmessung
+    min_temp: 4
+    max_temp: 35
+    target_temp: 7
+    precision: 0.5
+    target_temp_step: 0.5
+    initial_hvac_mode: "off"
+  - platform: generic_thermostat
+    name: TRV Kueche
+    unique_id: sim_trv_kueche
+    heater: input_boolean.sim_trv_kueche_valve
+    target_sensor: sensor.trv_kueche_eigenmessung
+    min_temp: 4
+    max_temp: 35
+    target_temp: 7
+    precision: 0.5
+    target_temp_step: 0.5
+    initial_hvac_mode: "off"

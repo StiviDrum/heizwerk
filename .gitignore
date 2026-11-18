@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv*/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Node / build output (built in CI / release)
+node_modules/
+custom_components/heizwerk/frontend/*.js
+custom_components/heizwerk/frontend/*.js.map
+
+# Local HA dev instance – keep only the configuration
+config/*
+!config/configuration.yaml
+
+# Home-lab context file with private details – never publish
+CLAUDE.md
+*:Zone.Identifier
+
+# Screenshots of local checks
+screenshots/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

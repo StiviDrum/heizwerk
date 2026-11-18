@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heizwerk-Karte – Standard</title>
+<!-- claude: 2026-11-18 – Mockup Heizwerk-Karte, Standardvariante (Raumkarte). Nur Entwurf, nichts in Home Assistant. Beispieldaten. -->
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+.theme{--page:#EEF0F3;--card:#FFFFFF;--tx:#15171A;--tx2:#5A616B;--line:#E2E5EA;--track:#E6E9EE;--heat:#B85500;--heatf:#F08A24;--blue:#1F5FC4;--teal:#0B7A70;--amber:#8A5300;--green:#2E7D32;--violet:#5B3FC4;--eco:#4D6A86;
+  background:var(--page);color:var(--tx);padding:28px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.theme.dark{--page:#0E1014;--card:#191C22;--tx:#ECEEF1;--tx2:#A2A9B3;--line:#2A2F37;--track:#2C313A;--heat:#FF9F4A;--heatf:#FF9F4A;--blue:#7AA8FF;--teal:#45C9BA;--amber:#F2B84B;--green:#6BCB77;--violet:#B3A1FF;--eco:#9DB4CC}
+.wrap{display:flex;flex-wrap:wrap}
+.wrap .theme{flex:1 1 380px}
+.lbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--tx2)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:16px;max-width:420px;width:100%;margin:0 auto}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+h2{margin:0;font-size:20px;font-weight:600}
+.sub{font-size:13px;color:var(--tx2)}
+.iconbtn{width:44px;height:44px;border-radius:12px;border:none;background:transparent;color:var(--tx2);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.chip{align-self:flex-start;display:flex;align-items:center;gap:8px;padding:8px 14px;min-height:36px;border-radius:999px;border:none;font:inherit;font-size:13px;font-weight:600;cursor:pointer;background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue)}
+svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.dial{position:relative;width:260px;height:214px;align-self:center}
+.dial .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:6px}
+.dial .big{font-size:54px;font-weight:600;letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
+.dial .s{font-size:13px;color:var(--tx2)}
+.dial .end{position:absolute;top:190px;font-size:11.5px;color:var(--tx2)}
+.ctrl{display:flex;align-items:center;justify-content:center;gap:22px}
+.round{width:48px;height:48px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--tx);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ziel{display:flex;flex-direction:column;align-items:center;min-width:110px}
+.ziel b{font-size:26px;font-weight:600;color:var(--heat);font-variant-numeric:tabular-nums}
+.ziel span{font-size:12px;color:var(--tx2)}
+.next{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--tx2)}
+.note{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--amber) 13%,transparent)}
+.note strong{font-size:14px;color:var(--amber);display:block}
+.note span{font-size:13px;color:var(--tx2)}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.m{border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.m .k{font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:6px}
+.m .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.m .n{font-size:12px;color:var(--tx2)}
+.bar{position:relative;height:6px;border-radius:3px;background:var(--track)}
+.bar i{position:absolute;top:0;bottom:0;border-radius:3px}
+.day{display:flex;flex-direction:column;gap:6px}
+.day .row{display:flex;justify-content:space-between;font-size:12px;color:var(--tx2)}
+.track{position:relative;height:12px;border-radius:6px;background:color-mix(in srgb,var(--eco) 30%,transparent)}
+.track i{position:absolute;top:0;bottom:0;border-radius:3px;background:var(--heatf)}
+.track em{position:absolute;top:-5px;width:2px;height:22px;border-radius:1px;background:var(--tx)}
+.foot{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--tx2);border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HELL -->
+<div class="theme">
+<div class="lbl">Standard · Hell</div>
+<article class="card">
+<div class="head">
+<div><h2>Bad</h2><div class="sub">Profil Komfort · Plan heizung_bad</div></div>
+<button class="iconbtn" aria-label="Weitere Optionen"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+</div>
+<button class="chip"><svg class="i" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M12 3v18M4 12h16"/></svg>Fenster offen seit 14 min · Heizung pausiert</button>
+<div class="dial">
+<svg width="260" height="214" viewBox="0 0 260 214" role="img" aria-label="Ist 18,5 Grad, Ziel 22,0 Grad">
+<path d="M 64.9 177.1 A 92 92 0 1 1 195.1 177.1" fill="none" stroke="var(--track)" stroke-width="14" stroke-linecap="round"/>
+<path d="M 114.6 21.3 A 92 92 0 0 1 207.9 63.1" fill="none" stroke="var(--blue)" stroke-opacity=".45" stroke-width="14" stroke-linecap="round"/>
+<circle cx="114.6" cy="21.3" r="8" fill="var(--card)" stroke="var(--tx)" stroke-width="3"/>
+<circle cx="207.9" cy="63.1" r="11" fill="var(--heatf)" stroke="var(--card)" stroke-width="3"/>
+</svg>
+<div class="mid"><span class="s">Ist</span><span class="big">18,5°</span><span class="s">Raumfühler</span></div>
+<span class="end" style="left:44px">12°</span><span class="end" style="right:44px">26°</span>
+</div>
+<div class="ctrl">
+<button class="round" aria-label="Ziel senken"><svg class="i" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+<div class="ziel"><span>Ziel</span><b>22,0°</b></div>
+<button class="round" aria-label="Ziel erhöhen"><svg class="i" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
+</div>
+<div class="next"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Komfort bis 07:30, dann Absenkung 18°</div>
+<div class="note">
+<svg class="i" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="flex:none;margin-top:1px;stroke:var(--amber);stroke-width:2"><path d="M5 12l4 4 10-10"/></svg>
+<div><strong>Genug gelüftet, Fenster kann zu</strong><span>Außen 8,9 °C, empfohlen 10 min. Offen seit 14 min.</span></div>
+</div>
+<div class="grid3">
+<div class="m"><span class="k"><svg class="i" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="stroke:var(--teal);stroke-width:2"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>Feuchte</span><span class="v">60 %</span>
+<div class="bar"><i style="left:40%;width:20%;background:color-mix(in srgb,var(--teal) 40%,transparent)"></i><i style="left:59%;top:-3px;bottom:auto;width:3px;height:12px;background:var(--teal)"></i></div></div>
+<div class="m"><span class="k">Taupunkt</span><span class="v">10,6°</span><span class="n">außen 7,2°</span></div>
+<div class="m"><span class="k">Wandfeuchte</span><span class="v">72 %</span><span class="n" style="font-weight:600;color:var(--amber)">Achtung · Wand 15,6°</span></div>
+</div>
+<div class="day">
+<div class="row"><span>Heute</span><span>Komfort 22° · Absenkung 18°</span></div>
+<div class="track"><i style="left:22.9%;width:8.35%"></i><i style="left:75%;width:12.5%"></i><em style="left:30.2%"></em></div>
+<div class="row" style="font-size:11.5px"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+</div>
+<div class="foot"><span>TRV: aus, Frostschutz im Gerät</span><span>Fühler: Raum</span><span>Abgleich 07:14</span></div>
+</article>
+</div>
+
+<!-- DUNKEL -->
+<div class="theme dark">
+<div class="lbl">Standard · Dunkel</div>
+<article class="card">
+<div class="head">
+<div><h2>Bad</h2><div class="sub">Profil Komfort · Plan heizung_bad</div></div>
+<button class="iconbtn" aria-label="Weitere Optionen"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+</div>
+<button class="chip"><svg class="i" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M12 3v18M4 12h16"/></svg>Fenster offen seit 14 min · Heizung pausiert</button>
+<div class="dial">
+<svg width="260" height="214" viewBox="0 0 260 214" role="img" aria-label="Ist 18,5 Grad, Ziel 22,0 Grad">
+<path d="M 64.9 177.1 A 92 92 0 1 1 195.1 177.1" fill="none" stroke="var(--track)" stroke-width="14" stroke-linecap="round"/>
+<path d="M 114.6 21.3 A 92 92 0 0 1 207.9 63.1" fill="none" stroke="var(--blue)" stroke-opacity=".45" stroke-width="14" stroke-linecap="round"/>
+<circle cx="114.6" cy="21.3" r="8" fill="var(--card)" stroke="var(--tx)" stroke-width="3"/>
+<circle cx="207.9" cy="63.1" r="11" fill="var(--heatf)" stroke="var(--card)" stroke-width="3"/>
+</svg>
+<div class="mid"><span class="s">Ist</span><span class="big">18,5°</span><span class="s">Raumfühler</span></div>
+<span class="end" style="left:44px">12°</span><span class="end" style="right:44px">26°</span>
+</div>
+<div class="ctrl">
+<button class="round" aria-label="Ziel senken"><svg class="i" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+<div class="ziel"><span>Ziel</span><b>22,0°</b></div>
+<button class="round" aria-label="Ziel erhöhen"><svg class="i" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
+</div>
+<div class="next"><svg class="i" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Komfort bis 07:30, dann Absenkung 18°</div>
+<div class="note">
+<svg class="i" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="flex:none;margin-top:1px;stroke:var(--amber);stroke-width:2"><path d="M5 12l4 4 10-10"/></svg>
+<div><strong>Genug gelüftet, Fenster kann zu</strong><span>Außen 8,9 °C, empfohlen 10 min. Offen seit 14 min.</span></div>
+</div>
+<div class="grid3">
+<div class="m"><span class="k"><svg class="i" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="stroke:var(--teal);stroke-width:2"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>Feuchte</span><span class="v">60 %</span>
+<div class="bar"><i style="left:40%;width:20%;background:color-mix(in srgb,var(--teal) 40%,transparent)"></i><i style="left:59%;top:-3px;bottom:auto;width:3px;height:12px;background:var(--teal)"></i></div></div>
+<div class="m"><span class="k">Taupunkt</span><span class="v">10,6°</span><span class="n">außen 7,2°</span></div>
+<div class="m"><span class="k">Wandfeuchte</span><span class="v">72 %</span><span class="n" style="font-weight:600;color:var(--amber)">Achtung · Wand 15,6°</span></div>
+</div>
+<div class="day">
+<div class="row"><span>Heute</span><span>Komfort 22° · Absenkung 18°</span></div>
+<div class="track"><i style="left:22.9%;width:8.35%"></i><i style="left:75%;width:12.5%"></i><em style="left:30.2%"></em></div>
+<div class="row" style="font-size:11.5px"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+</div>
+<div class="foot"><span>TRV: aus, Frostschutz im Gerät</span><span>Fühler: Raum</span><span>Abgleich 07:14</span></div>
+</article>
+</div>
+
+</div>
+</body>
+</html>
