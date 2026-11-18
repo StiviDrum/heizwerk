@@ -36,7 +36,6 @@ function entity(attrs: Record<string, unknown>, state = "heat"): HassEntityLike 
       min_temp: 5,
       max_temp: 30,
       target_temp_step: 0.5,
-      target_entity: "input_number.temperaturspeicher_bad",
       ...attrs,
     },
   };
@@ -51,9 +50,9 @@ const plan: ZeitwerkPlan = {
       name: "Komfort",
       actions: [
         {
-          action: "input_number.set_value",
-          target: { entity_id: "input_number.temperaturspeicher_bad" },
-          data: { value: 22 },
+          action: "climate.set_temperature",
+          target: { entity_id: "climate.heizwerk_bad" },
+          data: { temperature: 22 },
         },
       ],
     },
@@ -62,9 +61,9 @@ const plan: ZeitwerkPlan = {
       name: "Absenkung",
       actions: [
         {
-          action: "input_number.set_value",
-          target: { entity_id: "input_number.temperaturspeicher_bad" },
-          data: { value: 18 },
+          action: "climate.set_temperature",
+          target: { entity_id: "climate.heizwerk_bad" },
+          data: { temperature: 18 },
         },
       ],
     },
@@ -130,9 +129,22 @@ describe("status", () => {
     );
     expect(statusView(room, de, fmt).text).toBe("Manuell 23° von Steven · bis 11:00");
   });
-  it("manual until next block", () => {
-    const room = parseRoom(entity({ status: "manual", manual_target: 23 }));
+  it("manual until next block (resume available)", () => {
+    const room = parseRoom(entity({ status: "manual", manual_target: 23, resume_available: true }));
     expect(statusView(room, de, fmt).text).toBe("Manuell 23° · bis nächster Block");
+  });
+  it("manual without end and without resume has no suffix", () => {
+    const room = parseRoom(entity({ status: "manual", manual_target: 23, manual_by: "Steven" }));
+    expect(statusView(room, de, fmt).text).toBe("Manuell 23° von Steven");
+  });
+  it("manual with time ignores resume_available", () => {
+    const until = new Date(2026, 10, 18, 11, 0).toISOString();
+    for (const resume_available of [true, false]) {
+      const room = parseRoom(
+        entity({ status: "manual", manual_target: 23, manual_until: until, resume_available }),
+      );
+      expect(statusView(room, de, fmt).text).toBe("Manuell 23° · bis 11:00");
+    }
   });
   it("unreachable TRV wins", () => {
     const room = parseRoom(
@@ -164,9 +176,9 @@ describe("status", () => {
 });
 
 describe("zeitwerk", () => {
-  it("reads the profile value of the target entity", () => {
-    expect(profileValue(plan.profiles[0], "input_number.temperaturspeicher_bad")).toBe(22);
-    expect(profileValue(plan.profiles[0], "input_number.other")).toBeNull();
+  it("reads the profile value set on the room climate", () => {
+    expect(profileValue(plan.profiles[0], "climate.heizwerk_bad")).toBe(22);
+    expect(profileValue(plan.profiles[0], "climate.heizwerk_other")).toBeNull();
     expect(
       profileValue({ id: "x", name: "x", actions: [{ data: { temperature: 21 } }] }, null),
     ).toBe(21);
@@ -182,7 +194,7 @@ describe("zeitwerk", () => {
         { start: d(21), end: new Date(2026, 10, 19).toISOString(), profile: "eco" },
       ],
       plan,
-      "input_number.temperaturspeicher_bad",
+      "climate.heizwerk_bad",
       now,
     );
     expect(band.parts).toHaveLength(2);
@@ -327,5 +339,18 @@ describe("keyDelta", () => {
     expect(keyDelta("PageUp", 0.5)).toBe(1);
     expect(keyDelta("PageDown", 0.5)).toBe(-1);
     expect(keyDelta("Enter", 0.5)).toBeNull();
+  });
+});
+
+describe("parseRoom", () => {
+  it("reads resume_available and ignores removed attributes", () => {
+    const room = parseRoom(
+      entity({ resume_available: true, scheduled_target: 19, target_entity: "input_number.x" }),
+    );
+    expect(room.resumeAvailable).toBe(true);
+    expect(room).not.toHaveProperty("scheduled");
+    expect(room).not.toHaveProperty("targetEntity");
+    expect(parseRoom(entity({})).resumeAvailable).toBe(false);
+    expect(parseRoom(entity({ resume_available: "yes" })).resumeAvailable).toBe(false);
   });
 });

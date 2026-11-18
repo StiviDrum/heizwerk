@@ -62,7 +62,6 @@ export interface Room {
   status: string;
   current: number | null;
   target: number | null;
-  scheduled: number | null;
   humidity: number | null;
   dewPoint: number | null;
   outdoorDewPoint: number | null;
@@ -85,7 +84,7 @@ export interface Room {
   profileId: string | null;
   nextChange: Date | null;
   nextProfile: string | null;
-  targetEntity: string | null;
+  resumeAvailable: boolean;
   trvs: TrvAttr[];
   trvUnavailableSince: Date | null;
   locks: LockAttr[];
@@ -122,7 +121,6 @@ export function parseRoom(state: HassEntityLike): Room {
     status: str(a.status) ?? (state.state === "off" ? "off" : "reached"),
     current: num(a.current_temperature),
     target: num(a.temperature),
-    scheduled: num(a.scheduled_target),
     humidity: num(a.current_humidity),
     dewPoint: num(a.dew_point),
     outdoorDewPoint: num(a.outdoor_dew_point),
@@ -145,7 +143,7 @@ export function parseRoom(state: HassEntityLike): Room {
     profileId: str(a.zeitwerk_profile_id),
     nextChange: date(a.next_change),
     nextProfile: str(a.next_profile),
-    targetEntity: str(a.target_entity),
+    resumeAvailable: a.resume_available === true,
     trvs: Array.isArray(a.trvs) ? (a.trvs as TrvAttr[]) : [],
     trvUnavailableSince: date(a.trv_unavailable_since),
     locks: Array.isArray(a.locks) ? (a.locks as LockAttr[]) : [],
@@ -223,7 +221,7 @@ export interface Band {
 export function dayBand(
   segments: Segment[],
   plan: ZeitwerkPlan | null,
-  targetEntity: string | null,
+  entityId: string | null,
   now: Date,
 ): Band {
   const start = new Date(now);
@@ -232,7 +230,7 @@ export function dayBand(
   end.setDate(end.getDate() + 1);
   const span = end.getTime() - start.getTime();
   const values = new Map<string, number | null>();
-  for (const p of plan?.profiles ?? []) values.set(p.id, profileValue(p, targetEntity));
+  for (const p of plan?.profiles ?? []) values.set(p.id, profileValue(p, entityId));
   const used = [...new Set(segments.map((s) => s.profile))];
   const known = used.map((id) => values.get(id)).filter((v): v is number => v != null);
   const low = known.length ? Math.min(...known) : null;
@@ -265,16 +263,16 @@ export function dayBand(
 }
 
 /** Lowest set-point among the plan's profiles (for "Abgesenkt"). */
-export function lowestValue(plan: ZeitwerkPlan | null, targetEntity: string | null): number | null {
+export function lowestValue(plan: ZeitwerkPlan | null, entityId: string | null): number | null {
   const vals = (plan?.profiles ?? [])
-    .map((p) => profileValue(p, targetEntity))
+    .map((p) => profileValue(p, entityId))
     .filter((v): v is number => v !== null);
   return vals.length ? Math.min(...vals) : null;
 }
 
 export function nextValue(plan: ZeitwerkPlan | null, room: Room): number | null {
   const p = plan?.profiles.find((x) => x.name === room.nextProfile || x.id === room.nextProfile);
-  return p ? profileValue(p, room.targetEntity) : null;
+  return p ? profileValue(p, room.entityId) : null;
 }
 
 // --- Status -----------------------------------------------------------------
@@ -323,13 +321,13 @@ export function statusView(
     let text = s.manual.replace("{t}", t(room.manualTarget ?? room.target));
     if (room.manualBy) text += ` ${s.by} ${room.manualBy}`;
     if (room.manualUntil) text += ` · ${s.until} ${fmtTime(room.manualUntil, fmt)}`;
-    else text += ` · ${s.untilNext}`;
+    else if (room.resumeAvailable) text += ` · ${s.untilNext}`;
     return { tone: "violet", text, chip: null, locked: false };
   }
   if (room.status === "heating")
     return { tone: "heat", text: s.heating, chip: null, locked: false };
   // reached
-  const low = lowestValue(plan, room.targetEntity);
+  const low = lowestValue(plan, room.entityId);
   if (low !== null && room.target !== null && room.target <= low && room.nextChange) {
     return {
       tone: "eco",

@@ -255,7 +255,9 @@ export class HeizwerkCard extends LitElement {
     );
   }
 
+  /** Duration for set_manual; "next" (= no duration field) without a resume path. */
   private _durationFor(room: Room): Duration {
+    if (!room.resumeAvailable) return "next";
     const own = this._duration[room.entityId];
     if (own) return own;
     const cfg = this._config?.manual_duration;
@@ -599,7 +601,13 @@ export class HeizwerkCard extends LitElement {
     if (room.status === "manual") {
       return html`<div class="next">
         ${icon(P.person, 16)}<span>${sv.text}</span>
-        <button class="link" @click=${(e: Event) => this._resume(room, e)}>${s.resume}</button>
+        ${
+          room.resumeAvailable
+            ? html`<button class="link" @click=${(e: Event) => this._resume(room, e)}>
+                ${s.resume}
+              </button>`
+            : nothing
+        }
       </div>`;
     }
     if (!room.nextChange || !room.nextProfile) return nothing;
@@ -668,7 +676,7 @@ export class HeizwerkCard extends LitElement {
     if (!pd || !pd.segments.length) return nothing;
     const s = this._s;
     const fmt = this._fmt;
-    const band = dayBand(pd.segments, pd.plan, room.targetEntity, fmt.now);
+    const band = dayBand(pd.segments, pd.plan, room.entityId, fmt.now);
     const legend = band.legend
       .map((l) => (l.value !== null ? `${l.name} ${fmtTarget(l.value, fmt)}°` : l.name))
       .join(" · ");
@@ -742,8 +750,6 @@ export class HeizwerkCard extends LitElement {
       kv.push(`${s.wallOk.split(" ")[0]} ${fmtTemp(room.wallHumidity, fmt, 0)} %`);
     if (room.nextChange && room.profile)
       kv.push(`${room.profile} ${s.until} ${fmtTime(room.nextChange, fmt)}`);
-    else if (!room.plan && room.scheduled !== null)
-      kv.push(`${s.constant} ${fmtTarget(room.scheduled, fmt)}°`);
     if (room.ventilationRecommended) kv.push(s.ventRecommended);
     if (room.observeOnly) kv.push(s.observeOnly);
     void pd;
@@ -777,11 +783,15 @@ export class HeizwerkCard extends LitElement {
             ${icon(P.plus, 16)}
           </button>
         </span>
-        <span class="pillrow">
-          ${pill("next", s.untilNextBlock)} ${pill(60, s.hour1)} ${pill(180, s.hours3)}
-        </span>
         ${
-          room.status === "manual"
+          room.resumeAvailable
+            ? html`<span class="pillrow">
+                ${pill("next", s.untilNextBlock)} ${pill(60, s.hour1)} ${pill(180, s.hours3)}
+              </span>`
+            : nothing
+        }
+        ${
+          room.status === "manual" && room.resumeAvailable
             ? html`<button class="pill" @click=${(e: Event) => this._resume(room, e)}>
                 ${s.resume}
               </button>`

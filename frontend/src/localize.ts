@@ -61,7 +61,6 @@ export interface Strings {
   untilNextBlock: string;
   hour1: string;
   hours3: string;
-  constant: string;
   missing: string;
   notHeizwerk: string;
 }
@@ -128,7 +127,6 @@ const de: Strings = {
   untilNextBlock: "Bis nächster Block",
   hour1: "1 Std.",
   hours3: "3 Std.",
-  constant: "konstant",
   missing: "Entität nicht gefunden",
   notHeizwerk: "Keine Heizwerk-Entität",
 };
@@ -195,7 +193,6 @@ const en: Strings = {
   untilNextBlock: "Until next block",
   hour1: "1 h",
   hours3: "3 h",
-  constant: "constant",
   missing: "Entity not found",
   notHeizwerk: "Not a Heizwerk entity",
 };
