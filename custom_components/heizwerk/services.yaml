@@ -1,0 +1,46 @@
+set_manual:
+  fields:
+    entity_id:
+      required: true
+      example: climate.heizwerk_bad
+      selector:
+        entity:
+          integration: heizwerk
+          domain: climate
+          multiple: true
+    temperature:
+      required: true
+      example: 22
+      selector:
+        number:
+          min: 4
+          max: 35
+          step: 0.5
+          unit_of_measurement: "°C"
+    duration:
+      required: false
+      example: "01:00:00"
+      selector:
+        duration:
+
+resume:
+  fields:
+    entity_id:
+      required: true
+      example: climate.heizwerk_bad
+      selector:
+        entity:
+          integration: heizwerk
+          domain: climate
+          multiple: true
+
+sync:
+  fields:
+    entity_id:
+      required: true
+      example: climate.heizwerk_bad
+      selector:
+        entity:
+          integration: heizwerk
+          domain: climate
+          multiple: true

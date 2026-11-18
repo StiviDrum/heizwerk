@@ -1,0 +1,232 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Heizwerk",
+        "description": "House-wide sensors. Add rooms afterwards with 'Add room'.",
+        "data": {
+          "outdoor_temperature": "Outdoor temperature",
+          "outdoor_humidity": "Outdoor humidity",
+          "season_entity": "Heating period (on = active)",
+          "summer_lock_temperature": "Summer lock from outdoor temperature",
+          "summer_lock_minutes": "Summer lock after"
+        },
+        "data_description": {
+          "summer_lock_temperature": "0 disables the summer lock.",
+          "season_entity": "Heating is locked while this entity is off."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Heizwerk is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Heizwerk",
+        "data": {
+          "outdoor_temperature": "Outdoor temperature",
+          "outdoor_humidity": "Outdoor humidity",
+          "season_entity": "Heating period (on = active)",
+          "summer_lock_temperature": "Summer lock from outdoor temperature",
+          "summer_lock_minutes": "Summer lock after"
+        },
+        "data_description": {
+          "summer_lock_temperature": "0 disables the summer lock.",
+          "season_entity": "Heating is locked while this entity is off."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "initiate_flow": {
+        "user": "Add room"
+      },
+      "entry_type": "Room",
+      "step": {
+        "user": {
+          "title": "New room",
+          "data": {
+            "name": "Room name",
+            "trvs": "Radiator thermostats",
+            "temperature_sensor": "Room temperature sensor",
+            "humidity_sensor": "Humidity sensor",
+            "wall_temperature_sensor": "Wall temperature sensor",
+            "windows": "Window contacts",
+            "window_open_delay": "Window open: lock after",
+            "window_close_delay": "Window closed: release after",
+            "target_entity": "Zeitwerk target (planned set-point)",
+            "zeitwerk_plan": "Zeitwerk plan",
+            "lock_entities": "Additional locks",
+            "lock_mode": "When locked",
+            "frost_temperature": "Frost protection temperature",
+            "correction": "Correction",
+            "regulation": "Regulation",
+            "external_temperature_entities": "Thermostat external temperature inputs",
+            "default_target": "Set-point without Zeitwerk target",
+            "min_temp": "Minimum set-point",
+            "max_temp": "Maximum set-point",
+            "humidity_threshold": "Airing recommended from",
+            "observe_only": "Observe only (send nothing to thermostats)"
+          },
+          "data_description": {
+            "temperature_sensor": "External sensor. Without one, the mean of the thermostats' own readings is used.",
+            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Heizwerk only reads it.",
+            "zeitwerk_plan": "Plan id, used for profile display, day band and 'until next block'.",
+            "lock_entities": "Heating is locked while one of these is on.",
+            "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K.",
+            "regulation": "Offset additionally compensates the difference between thermostat reading and room sensor.",
+            "external_temperature_entities": "e.g. number.<trv>_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
+            "observe_only": "Heizwerk computes everything and shows what it would send, but does not touch the thermostats."
+          }
+        },
+        "reconfigure": {
+          "title": "Change room",
+          "data": {
+            "name": "Room name",
+            "trvs": "Radiator thermostats",
+            "temperature_sensor": "Room temperature sensor",
+            "humidity_sensor": "Humidity sensor",
+            "wall_temperature_sensor": "Wall temperature sensor",
+            "windows": "Window contacts",
+            "window_open_delay": "Window open: lock after",
+            "window_close_delay": "Window closed: release after",
+            "target_entity": "Zeitwerk target (planned set-point)",
+            "zeitwerk_plan": "Zeitwerk plan",
+            "lock_entities": "Additional locks",
+            "lock_mode": "When locked",
+            "frost_temperature": "Frost protection temperature",
+            "correction": "Correction",
+            "regulation": "Regulation",
+            "external_temperature_entities": "Thermostat external temperature inputs",
+            "default_target": "Set-point without Zeitwerk target",
+            "min_temp": "Minimum set-point",
+            "max_temp": "Maximum set-point",
+            "humidity_threshold": "Airing recommended from",
+            "observe_only": "Observe only (send nothing to thermostats)"
+          },
+          "data_description": {
+            "temperature_sensor": "External sensor. Without one, the mean of the thermostats' own readings is used.",
+            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Heizwerk only reads it.",
+            "zeitwerk_plan": "Plan id, used for profile display, day band and 'until next block'.",
+            "lock_entities": "Heating is locked while one of these is on.",
+            "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K.",
+            "regulation": "Offset additionally compensates the difference between thermostat reading and room sensor.",
+            "external_temperature_entities": "e.g. number.<trv>_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
+            "observe_only": "Heizwerk computes everything and shows what it would send, but does not touch the thermostats."
+          }
+        }
+      },
+      "error": {
+        "invalid_name": "Please enter a name.",
+        "name_exists": "A room with this name already exists.",
+        "no_trvs": "Select at least one thermostat.",
+        "min_max": "Maximum must be above minimum."
+      },
+      "abort": {
+        "reconfigure_successful": "Room updated."
+      }
+    }
+  },
+  "selector": {
+    "lock_mode": {
+      "options": {
+        "off": "Thermostat off (frost protection in device)",
+        "frost": "Heat to frost protection temperature"
+      }
+    },
+    "regulation": {
+      "options": {
+        "setpoint": "Set-point (+ correction)",
+        "offset": "Offset to room sensor"
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "room": {
+        "state_attributes": {
+          "status": {
+            "name": "Status",
+            "state": {
+              "off": "Off",
+              "unavailable": "Thermostat unavailable",
+              "window": "Window open",
+              "season": "Heating period off",
+              "summer": "Summer lock",
+              "locked": "Locked",
+              "manual": "Manual",
+              "heating": "Heating",
+              "reached": "Reached"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "dew_point": {
+        "name": "Dew point"
+      },
+      "wall_humidity": {
+        "name": "Wall humidity"
+      }
+    },
+    "binary_sensor": {
+      "ventilation": {
+        "name": "Airing recommended"
+      }
+    },
+    "switch": {
+      "observe_only": {
+        "name": "Observe only"
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_room": {
+      "message": "{entity_id} is not a Heizwerk room."
+    }
+  },
+  "services": {
+    "set_manual": {
+      "name": "Set manual target",
+      "description": "Overrides the planned set-point of a room until the next Zeitwerk change or for a duration.",
+      "fields": {
+        "entity_id": {
+          "name": "Room",
+          "description": "climate.heizwerk_<room>"
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Manual set-point."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Empty = until the next block."
+        }
+      }
+    },
+    "resume": {
+      "name": "Resume schedule",
+      "description": "Ends a manual override.",
+      "fields": {
+        "entity_id": {
+          "name": "Room",
+          "description": "climate.heizwerk_<room>"
+        }
+      }
+    },
+    "sync": {
+      "name": "Sync thermostats",
+      "description": "Re-evaluates the room and sends pending commands now (nothing in observe-only mode).",
+      "fields": {
+        "entity_id": {
+          "name": "Room",
+          "description": "climate.heizwerk_<room>"
+        }
+      }
+    }
+  }
+}

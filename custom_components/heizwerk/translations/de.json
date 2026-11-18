@@ -1,0 +1,232 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Heizwerk",
+        "description": "Hausweite Sensoren. Räume danach mit „Raum hinzufügen“ anlegen.",
+        "data": {
+          "outdoor_temperature": "Außentemperatur",
+          "outdoor_humidity": "Außenfeuchte",
+          "season_entity": "Heizperiode (an = aktiv)",
+          "summer_lock_temperature": "Sommerabschaltung ab Außentemperatur",
+          "summer_lock_minutes": "Sommerabschaltung nach"
+        },
+        "data_description": {
+          "summer_lock_temperature": "0 schaltet die Sommerabschaltung ab.",
+          "season_entity": "Solange diese Entität aus ist, ist die Heizung gesperrt."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Heizwerk ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Heizwerk",
+        "data": {
+          "outdoor_temperature": "Außentemperatur",
+          "outdoor_humidity": "Außenfeuchte",
+          "season_entity": "Heizperiode (an = aktiv)",
+          "summer_lock_temperature": "Sommerabschaltung ab Außentemperatur",
+          "summer_lock_minutes": "Sommerabschaltung nach"
+        },
+        "data_description": {
+          "summer_lock_temperature": "0 schaltet die Sommerabschaltung ab.",
+          "season_entity": "Solange diese Entität aus ist, ist die Heizung gesperrt."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "initiate_flow": {
+        "user": "Raum hinzufügen"
+      },
+      "entry_type": "Raum",
+      "step": {
+        "user": {
+          "title": "Neuer Raum",
+          "data": {
+            "name": "Raumname",
+            "trvs": "Heizkörperthermostate",
+            "temperature_sensor": "Raumfühler (Temperatur)",
+            "humidity_sensor": "Feuchtesensor",
+            "wall_temperature_sensor": "Wandtemperatur-Sensor",
+            "windows": "Fensterkontakte",
+            "window_open_delay": "Fenster offen: sperren nach",
+            "window_close_delay": "Fenster zu: freigeben nach",
+            "target_entity": "Zeitwerk-Ziel (geplanter Sollwert)",
+            "zeitwerk_plan": "Zeitwerk-Plan",
+            "lock_entities": "Weitere Sperren",
+            "lock_mode": "Bei Sperre",
+            "frost_temperature": "Frostschutztemperatur",
+            "correction": "Korrektur",
+            "regulation": "Regelung",
+            "external_temperature_entities": "Externe Temperatureingänge der Thermostate",
+            "default_target": "Sollwert ohne Zeitwerk-Ziel",
+            "min_temp": "Minimaler Sollwert",
+            "max_temp": "Maximaler Sollwert",
+            "humidity_threshold": "Lüften empfohlen ab",
+            "observe_only": "Nur beobachten (nichts an die Thermostate senden)"
+          },
+          "data_description": {
+            "temperature_sensor": "Externer Fühler. Ohne Fühler gilt der Mittelwert der Thermostat-Eigenmessungen.",
+            "target_entity": "Entität, die dein Zeitwerk-Plan setzt, z. B. input_number.temperaturspeicher_bad. Heizwerk liest sie nur.",
+            "zeitwerk_plan": "Plan-ID für Profilanzeige, Tagesband und „bis nächster Block“.",
+            "lock_entities": "Solange eine davon an ist, ist die Heizung gesperrt.",
+            "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K.",
+            "regulation": "Offset gleicht zusätzlich die Differenz zwischen Thermostat-Eigenmessung und Raumfühler aus.",
+            "external_temperature_entities": "z. B. number.<trv>_external_temperature_input (Sonoff TRVZB). Erhält die Raumtemperatur.",
+            "observe_only": "Heizwerk rechnet alles und zeigt an, was es senden würde, fasst die Thermostate aber nicht an."
+          }
+        },
+        "reconfigure": {
+          "title": "Raum ändern",
+          "data": {
+            "name": "Raumname",
+            "trvs": "Heizkörperthermostate",
+            "temperature_sensor": "Raumfühler (Temperatur)",
+            "humidity_sensor": "Feuchtesensor",
+            "wall_temperature_sensor": "Wandtemperatur-Sensor",
+            "windows": "Fensterkontakte",
+            "window_open_delay": "Fenster offen: sperren nach",
+            "window_close_delay": "Fenster zu: freigeben nach",
+            "target_entity": "Zeitwerk-Ziel (geplanter Sollwert)",
+            "zeitwerk_plan": "Zeitwerk-Plan",
+            "lock_entities": "Weitere Sperren",
+            "lock_mode": "Bei Sperre",
+            "frost_temperature": "Frostschutztemperatur",
+            "correction": "Korrektur",
+            "regulation": "Regelung",
+            "external_temperature_entities": "Externe Temperatureingänge der Thermostate",
+            "default_target": "Sollwert ohne Zeitwerk-Ziel",
+            "min_temp": "Minimaler Sollwert",
+            "max_temp": "Maximaler Sollwert",
+            "humidity_threshold": "Lüften empfohlen ab",
+            "observe_only": "Nur beobachten (nichts an die Thermostate senden)"
+          },
+          "data_description": {
+            "temperature_sensor": "Externer Fühler. Ohne Fühler gilt der Mittelwert der Thermostat-Eigenmessungen.",
+            "target_entity": "Entität, die dein Zeitwerk-Plan setzt, z. B. input_number.temperaturspeicher_bad. Heizwerk liest sie nur.",
+            "zeitwerk_plan": "Plan-ID für Profilanzeige, Tagesband und „bis nächster Block“.",
+            "lock_entities": "Solange eine davon an ist, ist die Heizung gesperrt.",
+            "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K.",
+            "regulation": "Offset gleicht zusätzlich die Differenz zwischen Thermostat-Eigenmessung und Raumfühler aus.",
+            "external_temperature_entities": "z. B. number.<trv>_external_temperature_input (Sonoff TRVZB). Erhält die Raumtemperatur.",
+            "observe_only": "Heizwerk rechnet alles und zeigt an, was es senden würde, fasst die Thermostate aber nicht an."
+          }
+        }
+      },
+      "error": {
+        "invalid_name": "Bitte einen Namen eingeben.",
+        "name_exists": "Ein Raum mit diesem Namen existiert bereits.",
+        "no_trvs": "Mindestens ein Thermostat auswählen.",
+        "min_max": "Maximum muss über dem Minimum liegen."
+      },
+      "abort": {
+        "reconfigure_successful": "Raum gespeichert."
+      }
+    }
+  },
+  "selector": {
+    "lock_mode": {
+      "options": {
+        "off": "Thermostat aus (Frostschutz im Gerät)",
+        "frost": "Auf Frostschutztemperatur heizen"
+      }
+    },
+    "regulation": {
+      "options": {
+        "setpoint": "Sollwert (+ Korrektur)",
+        "offset": "Offset zum Raumfühler"
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "room": {
+        "state_attributes": {
+          "status": {
+            "name": "Status",
+            "state": {
+              "off": "Aus",
+              "unavailable": "Thermostat nicht erreichbar",
+              "window": "Fenster offen",
+              "season": "Heizperiode aus",
+              "summer": "Sommerabschaltung",
+              "locked": "Gesperrt",
+              "manual": "Manuell",
+              "heating": "Heizt",
+              "reached": "Erreicht"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "dew_point": {
+        "name": "Taupunkt"
+      },
+      "wall_humidity": {
+        "name": "Wandfeuchte"
+      }
+    },
+    "binary_sensor": {
+      "ventilation": {
+        "name": "Lüften empfohlen"
+      }
+    },
+    "switch": {
+      "observe_only": {
+        "name": "Nur beobachten"
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_room": {
+      "message": "{entity_id} ist kein Heizwerk-Raum."
+    }
+  },
+  "services": {
+    "set_manual": {
+      "name": "Manuellen Sollwert setzen",
+      "description": "Übersteuert den geplanten Sollwert eines Raums bis zum nächsten Zeitwerk-Wechsel oder für eine Dauer.",
+      "fields": {
+        "entity_id": {
+          "name": "Raum",
+          "description": "climate.heizwerk_<room>"
+        },
+        "temperature": {
+          "name": "Temperatur",
+          "description": "Manueller Sollwert."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Leer = bis zum nächsten Block."
+        }
+      }
+    },
+    "resume": {
+      "name": "Zeitplan fortsetzen",
+      "description": "Beendet eine manuelle Übersteuerung.",
+      "fields": {
+        "entity_id": {
+          "name": "Raum",
+          "description": "climate.heizwerk_<room>"
+        }
+      }
+    },
+    "sync": {
+      "name": "Thermostate abgleichen",
+      "description": "Bewertet den Raum neu und sendet ausstehende Befehle sofort (bei „Nur beobachten“ nichts).",
+      "fields": {
+        "entity_id": {
+          "name": "Raum",
+          "description": "climate.heizwerk_<room>"
+        }
+      }
+    }
+  }
+}
