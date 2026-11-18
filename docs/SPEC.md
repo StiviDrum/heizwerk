@@ -1,21 +1,26 @@
 # Heizwerk – Spezifikation
 
 > Sprache: Deutsch. Code, Kommentare, Bezeichner, Commits: Englisch.
-> Stand: 2026-11-18 · Mindestversion Home Assistant **2026.11**
+> Stand: Version 0.5.0 (2026-11-18) · Mindestversion Home Assistant **2026.11**
 
 ## 1. Idee
 
-**Zeitwerk plant, Heizwerk regelt.** Zeitwerk entscheidet, *welche* Solltemperatur
-gerade gilt (Profile, Wochenplan, Vorrang-Regeln). Heizwerk setzt diese Sollwerte
-pro Raum an den Heizkörperthermostaten (TRV) um und kümmert sich um alles, was
-zwischen „Sollwert steht fest“ und „Ventil macht auf“ passiert:
+**Zeitwerk plant, Heizwerk regelt.** Ein Zeitplan (Zeitwerk, Scheduler,
+Automation) entscheidet, *welche* Solltemperatur gerade gilt, und setzt sie per
+`climate.set_temperature`. Heizwerk setzt sie pro Raum an den
+Heizkörperthermostaten (TRV) um und kümmert sich um alles, was zwischen „Sollwert
+steht fest“ und „Ventil macht auf“ passiert:
 
-- externer Raumfühler statt TRV-Eigenmessung, Korrektur (z. B. −0,5 K)
-- **Sperren**: Fenster offen, Heizperiode aus, Sommerabschaltung (außen ≥ 16 °C
-  für 10 min), frei wählbare Sperr-Entitäten
-- manuelle Übersteuerung mit Dauer (bis nächster Block / 1 h / 3 h)
-- Raumklima: Feuchte, Taupunkt, Wandfeuchte (Schimmelrisiko), Lüftungsempfehlung
+- externer Raumfühler statt TRV-Eigenmessung, Raumtemperatur an die TRVs senden
+- Regelart Sollwert (TRV regelt selbst), Zweipunkt (Ventil auf/zu) oder Offset
+- **Sperren**: Fenster offen, Heizperiode aus, Sommerabschaltung (Hauswert, pro
+  Raum überschreibbar), frei wählbare Sperr-Entitäten
+- manuelle Übersteuerung (Karte, Dienst, Drehen am Thermostat) mit Dauer,
+  „Fortsetzen“ über eine frei wählbare Aktion
+- Raumklima: Feuchte, Taupunkt, Wandfeuchte bzw. Schimmel-Indikator, Lüften
 - **Nur beobachten**: Heizwerk rechnet alles, schickt aber nichts an die TRVs
+
+Ziel ab 0.5: die bisherigen Heizungs-Automationen vollständig ablösen können.
 
 Abgrenzung: Heizwerk plant nicht (kein Wochenplan, keine Profile) – das bleibt
 Zeitwerk. Heizwerk erinnert nicht (keine Push-Ketten) – das bleibt Läutwerk.
@@ -73,31 +78,37 @@ Läutwerk-Dienste zur Referenz: `laeutwerk.trigger` {rule}, `acknowledge`,
 
 ### 3.2 Raum (Config-Subentry `room`, über „Raum hinzufügen“)
 
-| Option | Bedeutung | Standard |
-|---|---|---|
-| `name` | Raumname → `climate.heizwerk_<slug>` | – |
-| `trvs` | Thermostat-Entitäten (`climate`, mehrere) | – |
-| `temperature_sensor` | externer Raumfühler; fehlt er, gilt der Mittelwert der TRV-Messungen | – |
-| `humidity_sensor`, `wall_temperature_sensor` | Raumklima | – |
-| `windows` | Fensterkontakte (`binary_sensor`/`input_boolean`) | – |
-| `window_open_delay` / `window_close_delay` | Sekunden bis Sperre greift / endet | 30 / 10 |
-| `target_entity` | Zeitwerk-Ziel (siehe 2.1) | – |
-| `zeitwerk_plan` | Plan-ID für Anzeige und „bis nächster Block“ | – |
-| `lock_entities` | weitere Sperren: Zustand `on`/`true`/`open` sperrt | – |
-| `lock_mode` | Sperre schaltet TRV `off` (Frostschutz im Gerät) oder `frost` (heat auf Frostschutztemperatur) | `off` |
-| `frost_temperature` | Frostschutz | 7 |
-| `correction` | Korrektur in K auf den Sollwert | 0 |
-| `regulation` | `setpoint` (TRV-Soll = Ziel + Korrektur) oder `offset` (zusätzlich + TRV-Ist − Raum-Ist, ±5 K) | `setpoint` |
-| `external_temperature_entities` | `number`-Entitäten der TRVs für externe Temperatur (z. B. Sonoff TRVZB `external_temperature_input`) | – |
-| `default_target` | Sollwert ohne Zeitwerk-Ziel | 20 |
-| `min_temp` / `max_temp` | Bereich | 5 / 30 |
-| `humidity_threshold` | Lüften empfohlen ab % | 60 |
-| `observe_only` | **Nur beobachten** | **an** |
+Dialog: oben Name, Thermostate, Raumfühler, Nur beobachten; darunter zugeklappte
+Abschnitte. Felder erscheinen nur, wenn sie wirken (HA-Sichtbarkeitsbedingungen).
+Gespeichert wird flach (Schlüssel wie unten).
 
-Dialog (ab 0.3): oben Name, Thermostate, Raumfühler, Zeitwerk-Ziel, ggf. Sollwert
-ohne Ziel, Nur beobachten; darunter zugeklappte Abschnitte „Zeitwerk“ (Plan, wird
-automatisch erkannt), „Raumklima“, „Fenster & Sperren“, „Regelung (erweitert)“,
-„Grenzen“. Gespeichert wird weiterhin flach (gleiche Schlüssel wie oben).
+| Abschnitt | Option | Bedeutung | Standard |
+|---|---|---|---|
+| oben | `name` | Raumname → `climate.heizwerk_<slug>` | – |
+| oben | `trvs` | Thermostate (`climate`, mehrere; Heizwerk-Entitäten nicht wählbar) | – |
+| oben | `temperature_sensor` | Raumfühler; ohne: Mittel der TRV-Messungen | – |
+| oben | `observe_only` | **Nur beobachten** | **an** |
+| Plan & Fortsetzen | `zeitwerk_plan` | Plan für Anzeige; automatisch erkannt (Plan, der `climate.heizwerk_<raum>` setzt) | – |
+| Plan & Fortsetzen | `resume_action` | HA-Aktionen für „Fortsetzen“ und Dauer-Ende; leer + Plan → `zeitwerk.resume` | – |
+| Raumklima | `humidity_sensor` | Feuchte (Taupunkt, Lüften) | – |
+| Raumklima | `mold_sensor` | Schimmel-Indikator: Wandfeuchte in % direkt | – |
+| Raumklima | `wall_temperature_sensor` | Wandoberfläche °C/°F (nur ohne `mold_sensor`) | – |
+| Raumklima | `humidity_threshold` | Lüften empfohlen ab % | 60 |
+| Fenster & Sperren | `windows`, `window_open_delay`, `window_close_delay` | Fenster, Sekunden bis Sperre / Freigabe | – / 30 / 10 |
+| Fenster & Sperren | `lock_entities` | weitere Sperren (`on`/`true`/`open` sperrt) | – |
+| Fenster & Sperren | `lock_mode`, `frost_temperature` | Sperre = TRV `off` oder heat auf Frostschutz | `off` / 7 |
+| Fenster & Sperren | `outdoor_limit` | Sommerabschaltung ab … °C für diesen Raum (0 = keine) | Hauswert |
+| Regelung | `regulation` | `setpoint`, `two_point` oder `offset` | `setpoint` |
+| Regelung | `send_temperature` | Raumtemperatur an die TRVs senden (nur mit Raumfühler) | an (neue Räume) |
+| Regelung | `correction` | Korrektur in K auf den TRV-Sollwert | 0 |
+| Regelung | `hysteresis_low`, `hysteresis_high`, `heat_setpoint` | nur Zweipunkt | 0,5 / 0 / 24 |
+| Regelung | `trv_manual` | Drehen am Thermostat: `adopt` (übernehmen) oder `reset` | `adopt` |
+| Sollwerte & Grenzen | `default_target` | Start-Sollwert bis zum ersten Wert | 20 |
+| Sollwerte & Grenzen | `min_temp` / `max_temp` | Bereich | 5 / 30 |
+
+Altdaten: `target_entity` (bis 0.3) wird ignoriert und als Reparaturhinweis
+gemeldet; `external_temperature_entities` (bis 0.4) bleibt wirksam, solange
+`send_temperature` an ist.
 
 Neue Räume starten **immer** im Modus „Nur beobachten“ (Abschnitt 1.4 der
 Hausregeln: Heizungssteuerung nur mit Freigabe).
@@ -124,20 +135,21 @@ manuell  = über Heizwerk-Karte/heizwerk.set_manual gesetzt, bis zum nächsten W
 | `season` | Heizperiode aus | Sperre |
 | `summer` | außen ≥ Schwelle seit `summer_lock_minutes` | Sperre |
 | `locked` | eine Sperr-Entität aktiv | Sperre |
-| `manual` | manuelle Übersteuerung aktiv | heat, Soll |
-| `heating` | Ist < wirksam − 0,2 K oder ein TRV meldet `hvac_action: heating` | heat, Soll |
-| `reached` | sonst | heat, Soll |
+| `manual` | manuelle Übersteuerung aktiv | wie Regelart |
+| `heating` | Sollwert: Ist < Soll − 0,2 K oder TRV meldet `heating`; Zweipunkt: an | Sollwert: heat, Soll · Zweipunkt: heat, `heat_setpoint` |
+| `reached` | sonst | Sollwert: heat, Soll · Zweipunkt: off |
 
 Sperre = `hvac_mode: off` (`lock_mode: off`) bzw. heat auf `frost_temperature`.
 
 ### 4.3 Befehle
 
-- TRV-Soll = wirksam + `correction` (+ Offset bei `regulation: offset`), auf
-  Schrittweite des TRV gerundet, auf dessen `min_temp`/`max_temp` begrenzt.
+- `setpoint`/`offset`: TRV-Soll = wirksam + `correction` (+ TRV-Ist − Raum-Ist,
+  ±5 K, bei `offset`), auf Schrittweite des TRV gerundet und begrenzt.
+- `two_point`: siehe 4.5.
 - Entprellung 10 s: Änderungen werden gesammelt, dann einmal ausgewertet.
 - Gesendet wird nur, was vom TRV-Zustand abweicht (kein Dauerfeuer).
-- Externe Temperatur: Raum-Ist an `external_temperature_entities`, wenn sich der
-  Wert um ≥ 0,1 K ändert, sonst spätestens alle 30 min.
+- Abgleich alle 5 min, solange Befehle ausstehen; Neubewertung nach HA-Start.
+- Externe Temperatur: siehe 4.5 (`send_temperature`).
 - **Nur beobachten**: Befehle werden berechnet und als `planned_commands`
   angezeigt, aber nicht gesendet.
 - `last_sync` = Zeit der letzten (gesendeten bzw. geplanten) Befehlsrunde.
@@ -153,7 +165,7 @@ Sperre = `hvac_mode: off` (`lock_mode: off`) bzw. heat auf `frost_temperature`.
 - Lüften empfohlen: Feuchte ≥ `humidity_threshold` und (Taupunkt außen unbekannt
   oder ≥ 1 K unter Taupunkt innen) und Fenster zu.
 
-### 4.5 Ab 0.5 (Ablösung der Heizungs-Automationen)
+### 4.5 Thermostat-Funktionen (ab 0.5)
 
 | Funktion | Verhalten |
 |---|---|
@@ -170,7 +182,7 @@ Sperre = `hvac_mode: off` (`lock_mode: off`) bzw. heat auf `frost_temperature`.
 |---|---|
 | `climate.heizwerk_<raum>` | Modi `heat`/`off`, Ist = Raumfühler, Soll = wirksam, `current_humidity`, `hvac_action` |
 | `sensor.heizwerk_<raum>_dew_point` | Taupunkt (°C), nur mit Feuchtesensor |
-| `sensor.heizwerk_<raum>_wall_humidity` | Wandfeuchte (%), nur mit Wandsensor |
+| `sensor.heizwerk_<raum>_wall_humidity` | Wandfeuchte (%), mit Schimmel-Indikator oder Feuchte- + Wandsensor |
 | `binary_sensor.heizwerk_<raum>_ventilation` | Lüften empfohlen |
 | `switch.heizwerk_<raum>_observe_only` | Nur beobachten (Konfiguration) |
 
@@ -193,8 +205,8 @@ Attribute von `climate.heizwerk_<raum>` (Schnittstelle zur Karte):
 
 | Dienst | Felder |
 |---|---|
-| `heizwerk.set_manual` | `entity_id`, `temperature`, `duration` (optional; ohne = bis nächster Block) |
-| `heizwerk.resume` | `entity_id` |
+| `heizwerk.set_manual` | `entity_id`, `temperature`, `duration` (optional, nur mit Fortsetzen-Aktion; ohne = bis zum nächsten Wert) |
+| `heizwerk.resume` | `entity_id` – führt die Fortsetzen-Aktion aus |
 | `heizwerk.sync` | `entity_id` – Befehle sofort neu senden (bzw. neu berechnen) |
 
 ## 7. Karte `custom:heizwerk-card`
@@ -214,10 +226,12 @@ manual_duration: next    # next | 60 | 180 (Minuten) – Standard für ± in der
 - **Standard** (Mockup `mockups/heizwerk-karte-standard.html`): Kopf (Raum, Profil,
   Plan, ⋯ → Mehr-Info), Zustands-Chip, Dial Ist/Ziel, ± Ziel, nächster Wechsel,
   Hinweis (Lüften/Schimmel), Raumklima (Feuchte, Taupunkt, Wandfeuchte),
-  Tagesband aus Zeitwerk, Fußzeile (TRV, Fühler, Abgleich, Nur beobachten).
+  Tagesband aus Zeitwerk, Fußzeile (TRV, Fühler, Abgleich, Zweipunkt, Nur
+  beobachten, Warnung „Raumfühler fehlt“).
 - **Kompakt** (Mockup `mockups/heizwerk-karte-kompakt.html`): `entity` → Einzelkachel
   (eine Zeile, ± ), `entities` → Hausliste mit aufklappbaren Zeilen (Mini-Balken,
-  Kennwerte, ±, Dauer-Pillen „Bis nächster Block / 1 Std. / 3 Std.“).
+  Kennwerte, ±, Dauer-Pillen „Bis nächster Block / 1 Std. / 3 Std.“ – nur mit
+  Fortsetzen-Aktion).
 - Standard: Ziel am Kreis ziehbar (Touch/Maus, 0,5 K, Senden beim Loslassen),
   Tastatur (Pfeile, Bild auf/ab), ARIA-Slider.
 - Nutzt HA-Theme-Variablen, hell/dunkel, Touch-Ziele ≥ 44 px, kein Hover-Zwang,
@@ -225,7 +239,7 @@ manual_duration: next    # next | 60 | 180 (Minuten) – Standard für ± in der
 - Karte wird von der Integration selbst registriert (statischer Pfad +
   `add_extra_js_url`), keine manuelle Ressource.
 
-## 8. Nicht-Ziele (0.x)
+## 8. Nicht-Ziele
 
 - Kein eigener Zeitplan, keine Profile (Zeitwerk).
 - Kein Vorheizen/Lernen („Vorlauf ab …“ aus dem Mockup) – vorgemerkt für später.

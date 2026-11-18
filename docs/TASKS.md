@@ -1,6 +1,7 @@
 # Heizwerk – Aufgaben
 
-Stand nach jeder Aufgabe aktualisieren. Branch: `claude/heizwerk-0.1`.
+Stand nach jeder Aufgabe aktualisieren. Aktuelle Version: **0.5.0**. Arbeits-Branch: `claude/heizwerk-0.1` (Name historisch), Standard-Branch `main`.
+Die Abschnitte unten sind die Historie je Version; maßgeblich für den Ist-Stand sind README und SPEC.
 
 ## M0 – Gerüst
 - [x] HACS (`hacs.json`), `manifest.json`, Lizenz, Skripte (`setup`, `develop`, `lint`, `check`, `test`)
@@ -112,10 +113,10 @@ Erkennung von Eingang/Messquelle am TRVZB-Gerät nur per Test (Dev-TRVs haben
 kein Gerät).
 
 ## Offen / später
-- [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bewusst nicht in 0.1
+- [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bisher bewusst nicht umgesetzt
 - [ ] Brand-Icons (`custom_components/heizwerk/brand/`)
 - [x] Release 0.1.0 getaggt (Freigabe Steven 2026-11-18)
-- [ ] Produktiv-Einsatz: nur nach Freigabe (Hausregeln 1.4), zuerst „Nur beobachten“ parallel zu den bestehenden Automationen
+- [ ] Produktiv-Einsatz: nur nach Freigabe (Hausregeln 1.4), Raum für Raum zuerst „Nur beobachten“ parallel zu den bestehenden Automationen
 
 ## Erkenntnisse
 - HA 2026.11: Formulare können Felder abhängig von anderen Feldern zeigen
@@ -137,7 +138,7 @@ kein Gerät).
 - Startrennen mit dem Wiederherstellen der TRV-Zustände: Neubewertung nach
   `homeassistant_started` und 5-min-Abgleich bei ausstehenden Befehlen.
 
-## Dev-Test (2026-11-18, Dev-Instanz :8125)
+## Dev-Test (Stand 0.1, Dev-Instanz :8125) – spätere Dev-Tests je Version oben
 `scripts/dev_check.py screenshots --shots` – alle Szenarien OK: TRV-Steuerung mit
 Korrektur, externe Temperatur, Nur beobachten, Fenstersperre mit Verzögerungen,
 Sperr-Entität mit Frostschutz, manuelle Übersteuerung inkl. Benutzer und Ende durch
