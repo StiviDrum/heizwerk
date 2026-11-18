@@ -46,6 +46,8 @@ export interface Strings {
   atThermostat: string;
   twoPoint: string;
   roomSensorMissing: string;
+  windowOpenFor: string;
+  manualUntil: string;
   today: string;
   trv: string;
   trvNone: string;
@@ -118,6 +120,8 @@ const de: Strings = {
   atThermostat: "am Thermostat",
   twoPoint: "Zweipunkt",
   roomSensorMissing: "Raumfühler fehlt",
+  windowOpenFor: "Fenster offen seit {min} min",
+  manualUntil: "Manuell bis {time}",
   today: "Heute",
   trv: "TRV",
   trvNone: "kein TRV",
@@ -190,6 +194,8 @@ const en: Strings = {
   atThermostat: "at the thermostat",
   twoPoint: "two-point",
   roomSensorMissing: "room sensor missing",
+  windowOpenFor: "Window open for {min} min",
+  manualUntil: "Manual until {time}",
   today: "Today",
   trv: "TRV",
   trvNone: "no TRV",

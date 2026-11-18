@@ -17,7 +17,9 @@ import {
   stepTarget,
   trvText,
   wallNote,
-  footInfo,
+  footItems,
+  bandTitle,
+  infoItems,
   type HassEntityLike,
   type ZeitwerkPlan,
 } from "../src/model";
@@ -427,24 +429,33 @@ describe("0.5.0 wall indicator, manual source, footer", () => {
       externalInputs: [],
     });
   });
-  it("footer sensor and regulation", () => {
+  it("footer: sync, two-point, observe-only, sensor warning", () => {
     const f = (a: Record<string, unknown>, lang = de) =>
-      footInfo(parseRoom(entity(a)), lang).map((x) => (x.warn ? `!${x.text}` : x.text));
-    expect(f({})).toEqual(["Fühler: Raum"]);
-    expect(f({ external_inputs: ["number.x"] })).toEqual(["Fühler: Raum"]);
-    expect(f({ temperature_source: "trv" })).toEqual(["Fühler: TRV"]);
-    // TRV reading although Heizwerk feeds external inputs = room sensor failed.
-    expect(f({ temperature_source: "trv", external_inputs: ["number.x"] })).toEqual([
-      "Fühler: TRV",
-      "!Raumfühler fehlt",
+      footItems(parseRoom(entity(a)), lang, fmt).map((x) =>
+        x.kind ? `${x.kind}:${x.text}` : x.text,
+      );
+    expect(f({})).toEqual([]);
+    expect(
+      f({ temperature_source: "trv", trvs: [{ entity_id: "climate.t", available: true }] }),
+    ).toEqual([]);
+    expect(f({ external_inputs: ["number.x"] })).toEqual([]);
+    expect(f({ last_sync: new Date(2026, 10, 18, 7, 10).toISOString() })).toEqual([
+      "Abgleich 07:10",
     ]);
+    expect(
+      f({
+        temperature_source: "trv",
+        external_inputs: ["number.x"],
+        last_sync: new Date(2026, 10, 18, 7, 10).toISOString(),
+        regulation: "two_point",
+        observe_only: true,
+      }),
+    ).toEqual(["warn:Raumfühler fehlt", "Abgleich 07:10", "Zweipunkt", "obs:Nur beobachten"]);
+    expect(f({ regulation: "two_point" }, strings("en"))).toEqual(["two-point"]);
     expect(f({ temperature_source: "trv", external_inputs: ["number.x"] }, strings("en"))).toEqual([
-      "Sensor: TRV",
-      "!room sensor missing",
+      "warn:room sensor missing",
     ]);
-    expect(f({ regulation: "two_point" })).toEqual(["Fühler: Raum", "Zweipunkt"]);
-    expect(f({ regulation: "two_point" }, strings("en"))).toEqual(["Sensor: room", "two-point"]);
-    expect(f({ regulation: "offset" })).toEqual(["Fühler: Raum"]);
+    expect(f({ regulation: "offset" })).toEqual([]);
   });
   it("indicator without critical temperature shows no wall note", () => {
     const room = parseRoom(
@@ -471,5 +482,71 @@ describe("indicator note without critical temperature", () => {
     const note = roomNote(room, de, fmt);
     expect(note?.text).not.toContain("kritisch");
     expect(note?.text).toContain("74 %");
+  });
+});
+
+describe("0.5.1 band title and compact info line", () => {
+  it("band title uses the plan name, falls back to the id", () => {
+    expect(bandTitle(de, { ...plan, name: "Heizung Bad" }, "heizung_bad")).toBe(
+      "Heute · Plan Heizung Bad",
+    );
+    expect(bandTitle(de, plan, "heizung_bad")).toBe("Heute · Plan heizung_bad");
+    expect(bandTitle(de, null, "heizung_bad")).toBe("Heute · Plan heizung_bad");
+    expect(bandTitle(strings("en"), null, null)).toBe("Today");
+  });
+  it("info line: humidity and next change", () => {
+    const room = parseRoom(
+      entity({
+        status: "reached",
+        current_humidity: 61.6,
+        next_change: new Date(2026, 10, 18, 18, 0).toISOString(),
+        next_profile: "Komfort",
+      }),
+    );
+    expect(infoItems(room, de, fmt)).toEqual(["Feuchte 62 %", "Komfort ab 18:00"]);
+    expect(infoItems(parseRoom(entity({})), de, fmt)).toEqual([]);
+  });
+  it("info line: window minutes first", () => {
+    const room = parseRoom(
+      entity({
+        status: "window",
+        window_open: true,
+        window_open_since: new Date(now.getTime() - 14 * 60000).toISOString(),
+        current_humidity: 58,
+        ventilation_recommended: true,
+      }),
+    );
+    expect(infoItems(room, de, fmt)).toEqual(["Fenster offen seit 14 min", "Feuchte 58 %"]);
+  });
+  it("info line: manual end, no next change while manual", () => {
+    const room = parseRoom(
+      entity({
+        status: "manual",
+        manual_target: 23,
+        manual_until: new Date(2026, 10, 18, 21, 0).toISOString(),
+        next_change: new Date(2026, 10, 18, 18, 0).toISOString(),
+        next_profile: "Komfort",
+        current_humidity: 50,
+      }),
+    );
+    expect(infoItems(room, de, fmt)).toEqual(["Manuell bis 21:00", "Feuchte 50 %"]);
+    expect(infoItems(room, strings("en"), fmt)[0]).toBe("Manual until 21:00");
+    const noEnd = parseRoom(entity({ status: "manual", manual_target: 23 }));
+    expect(infoItems(noEnd, de, fmt)).toEqual([]);
+  });
+  it("info line: at most three items", () => {
+    const room = parseRoom(
+      entity({
+        status: "reached",
+        current_humidity: 70,
+        next_change: new Date(2026, 10, 18, 18, 0).toISOString(),
+        next_profile: "Komfort",
+        ventilation_recommended: true,
+        window_open: true,
+      }),
+    );
+    const items = infoItems(room, de, fmt);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatch(/^Fenster offen/);
   });
 });

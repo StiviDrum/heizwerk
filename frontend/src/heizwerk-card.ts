@@ -8,14 +8,16 @@ import { strings, type Strings } from "./localize";
 import {
   DIAL,
   arcPath,
+  bandTitle,
   dayBand,
   dialPoint,
   fmtTarget,
   fmtTemp,
   fmtTime,
-  footInfo,
+  footItems,
   fraction,
   fractionToValue,
+  infoItems,
   keyDelta,
   nextValue,
   parseRoom,
@@ -23,7 +25,6 @@ import {
   roomNote,
   statusView,
   stepTarget,
-  trvText,
   wallNote,
   type Fmt,
   type HassEntityLike,
@@ -87,7 +88,6 @@ const icon = (d: string, size = 17): TemplateResult =>
 const P = {
   plus: "M5 12h14M12 5v14",
   minus: "M5 12h14",
-  chev: "M6 9l6 6 6-6",
   flame:
     "M12 3c1 3 4.5 4.8 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.4 2.2-4.4 0 1.6 1 2.7 2.1 2.7 0-2.7-1-4.6.2-7.3z",
   window:
@@ -159,12 +159,11 @@ export class HeizwerkCard extends LitElement {
 
   getCardSize(): number {
     if (this._config?.variant !== "compact") return 9;
-    return this._config.entities ? 1 + this._config.entities.length : 1;
+    return this._config.entities ? 1 + 2 * this._config.entities.length : 2;
   }
 
   getGridOptions(): Record<string, number> {
-    if (this._config?.variant === "compact" && !this._config.entities)
-      return { columns: 6, rows: 1, min_rows: 1 };
+    // Full width, height follows the content (no fixed rows) – tile and house list.
     return { columns: 12, min_columns: 6 };
   }
 
@@ -445,15 +444,9 @@ export class HeizwerkCard extends LitElement {
     const sv = statusView(room, s, fmt, pd?.plan ?? null);
     const note = roomNote(room, s, fmt);
     const target = this._shownTarget(room);
-    const sub = room.plan
-      ? `${room.profile ? `${s.profile} ${room.profile} · ` : ""}${s.plan} ${room.plan}`
-      : s.noPlan;
     return html`<ha-card class="std t-${sv.tone}">
       <div class="head">
-        <div>
-          <h2>${room.name}</h2>
-          <div class="sub">${sub}</div>
-        </div>
+        <h2>${room.name}</h2>
         <button class="iconbtn" aria-label=${s.more} @click=${() => this._moreInfo(room.entityId)}>
           <svg
             width="20"
@@ -513,7 +506,7 @@ export class HeizwerkCard extends LitElement {
             </div>`
           : nothing
       }
-      ${this._renderClimate(room)} ${this._renderBand(room, pd)} ${this._renderFoot(room, sv)}
+      ${this._renderClimate(room)} ${this._renderBand(room, pd)} ${this._renderFoot(room)}
     </ha-card>`;
   }
 
@@ -681,7 +674,9 @@ export class HeizwerkCard extends LitElement {
       .map((l) => (l.value !== null ? `${l.name} ${fmtTarget(l.value, fmt)}°` : l.name))
       .join(" · ");
     return html`<div class="day">
-      <div class="row"><span>${s.today}</span><span>${legend}</span></div>
+      <div class="row">
+        <span class="bt">${bandTitle(s, pd.plan, room.plan)}</span><span>${legend}</span>
+      </div>
       <div class="track">
         ${band.parts.map((p) => html`<i style="left:${p.left}%;width:${p.width}%"></i>`)}
         <em style="left:${band.now}%"></em>
@@ -692,67 +687,86 @@ export class HeizwerkCard extends LitElement {
     </div>`;
   }
 
-  private _renderFoot(room: Room, sv: StatusView): TemplateResult {
-    const s = this._s;
-    const fmt = this._fmt;
+  private _renderFoot(room: Room): TemplateResult | typeof nothing {
+    const items = footItems(room, this._s, this._fmt);
+    if (!items.length) return nothing;
     return html`<div class="foot">
-      <span>${trvText(room, s, fmt, sv.locked)}</span>
-      ${footInfo(room, s).map((f) => html`<span class=${f.warn ? "fwarn" : ""}>${f.text}</span>`)}
-      ${room.lastSync ? html`<span>${s.sync} ${fmtTime(room.lastSync, fmt)}</span>` : nothing}
-      ${room.observeOnly ? html`<span class="obs">${s.observeOnly}</span>` : nothing}
+      ${items.map((f) => html`<span class=${f.kind ?? ""}>${f.text}</span>`)}
     </div>`;
   }
 
   // --- Compact ------------------------------------------------------------------
 
-  private _summary(room: Room, sv: StatusView): TemplateResult {
-    const fmt = this._fmt;
-    const target = this._shownTarget(room);
-    return html`<span class="ic t-${sv.tone}">${icon(statusIcon(room, sv))}</span>
-      <span class="nm"><b>${room.name}</b><span>${sv.text}</span></span>
-      <span class="tp"
-        ><b class="num">${fmtTemp(room.current, fmt)}°</b
-        ><span class="num">${this._s.target} ${fmtTarget(target, fmt)}°</span></span
-      >`;
-  }
-
-  private _stepButtons(room: Room): TemplateResult {
-    const s = this._s;
-    return html`<span class="step">
-      <button
-        aria-label="${room.name}: ${s.raise}"
-        @click=${(e: Event) => this._step(room, room.step, e)}
-      >
-        ${icon(P.plus, 16)}
-      </button>
-      <button
-        aria-label="${room.name}: ${s.lower}"
-        @click=${(e: Event) => this._step(room, -room.step, e)}
-      >
-        ${icon(P.minus, 16)}
-      </button>
-    </span>`;
-  }
-
-  private _details(room: Room, sv: StatusView): TemplateResult {
+  /** One compact room (tile or house-list row): row, info line, bar, details. */
+  private _compactRoom(room: Room, sv: StatusView): TemplateResult {
     const s = this._s;
     const fmt = this._fmt;
-    const pd = this._planOf(room);
+    const id = room.entityId;
     const target = this._shownTarget(room);
-    // Mini bar from 12..26 °C like the dial: fill = current, marker = target.
-    const min = this._config?.dial_min ?? 12;
-    const max = this._config?.dial_max ?? 26;
+    const [min, max] = this._dialRange();
     const fill = room.current !== null ? fraction(room.current, min, max) * 100 : 0;
     const mark = target !== null ? fraction(target, min, max) * 100 : null;
-    const kv: string[] = [];
-    if (room.humidity !== null) kv.push(`${s.humidity} ${fmtTemp(room.humidity, fmt, 0)} %`);
-    if (room.wallHumidity !== null)
-      kv.push(`${s.wallOk.split(" ")[0]} ${fmtTemp(room.wallHumidity, fmt, 0)} %`);
-    if (room.nextChange && room.profile)
-      kv.push(`${room.profile} ${s.until} ${fmtTime(room.nextChange, fmt)}`);
-    if (room.ventilationRecommended) kv.push(s.ventRecommended);
-    if (room.observeOnly) kv.push(s.observeOnly);
-    void pd;
+    const info = infoItems(room, s, fmt);
+    // Details only hold the duration pills / Fortsetzen → without a resume path
+    // the row opens the more-info dialog instead.
+    const expandable = room.resumeAvailable;
+    const open = expandable && !!this._open[id];
+    const activate = () => (expandable ? this._toggle(id) : this._moreInfo(id));
+    return html`<div class="cr t-${sv.tone} ${open ? "open" : ""}">
+      <div
+        class="row1"
+        role="button"
+        tabindex="0"
+        aria-expanded=${expandable ? String(open) : nothing}
+        @click=${activate}
+        @keydown=${(e: KeyboardEvent) => {
+          if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+          e.preventDefault();
+          activate();
+        }}
+      >
+        <span class="ic">${icon(statusIcon(room, sv), 20)}</span>
+        <span class="nm"
+          ><b>${room.name}</b
+          ><span
+            >${
+              // The end of a manual override is in the info line below.
+              room.status === "manual" ? sv.text.split(" · ")[0] : sv.text
+            }</span
+          ></span
+        >
+        <span class="tp">
+          <b class="num">${fmtTemp(room.current, fmt)}°</b>
+          <span class="num">${s.target} ${fmtTarget(target, fmt)}°</span>
+        </span>
+        <span class="step">
+          <button
+            aria-label="${room.name}: ${s.lower}"
+            ?disabled=${target === null || target <= room.minTemp}
+            @click=${(e: Event) => this._step(room, -room.step, e)}
+          >
+            ${icon(P.minus, 18)}
+          </button>
+          <button
+            aria-label="${room.name}: ${s.raise}"
+            ?disabled=${target === null || target >= room.maxTemp}
+            @click=${(e: Event) => this._step(room, room.step, e)}
+          >
+            ${icon(P.plus, 18)}
+          </button>
+        </span>
+      </div>
+      ${info.length ? html`<div class="info">${info.join(" · ")}</div>` : nothing}
+      <div class="mini" aria-hidden="true">
+        <i style="left:0;width:${fill}%"></i>
+        ${mark !== null ? html`<em style="left:${mark}%"></em>` : nothing}
+      </div>
+      ${open ? this._details(room) : nothing}
+    </div>`;
+  }
+
+  private _details(room: Room): TemplateResult {
+    const s = this._s;
     const d = this._durationFor(room);
     const pill = (value: Duration, label: string) =>
       html`<button
@@ -762,42 +776,15 @@ export class HeizwerkCard extends LitElement {
       >
         ${label}
       </button>`;
-    return html`<div class="det t-${sv.tone}">
-      <div class="mini">
-        <i style="left:0;width:${fill}%"></i>
-        ${mark !== null ? html`<em style="left:${mark}%"></em>` : nothing}
-      </div>
-      <div class="kv">${kv.join(" · ")}</div>
-      <div class="act">
-        <span class="step">
-          <button
-            aria-label="${room.name}: ${s.lower}"
-            @click=${(e: Event) => this._step(room, -room.step, e)}
-          >
-            ${icon(P.minus, 16)}
-          </button>
-          <button
-            aria-label="${room.name}: ${s.raise}"
-            @click=${(e: Event) => this._step(room, room.step, e)}
-          >
-            ${icon(P.plus, 16)}
-          </button>
-        </span>
-        ${
-          room.resumeAvailable
-            ? html`<span class="pillrow">
-                ${pill("next", s.untilNextBlock)} ${pill(60, s.hour1)} ${pill(180, s.hours3)}
-              </span>`
-            : nothing
-        }
-        ${
-          room.status === "manual" && room.resumeAvailable
-            ? html`<button class="pill" @click=${(e: Event) => this._resume(room, e)}>
-                ${s.resume}
-              </button>`
-            : nothing
-        }
-      </div>
+    return html`<div class="det">
+      ${pill("next", s.untilNextBlock)} ${pill(60, s.hour1)} ${pill(180, s.hours3)}
+      ${
+        room.status === "manual"
+          ? html`<button class="pill res" @click=${(e: Event) => this._resume(room, e)}>
+              ${s.resume}
+            </button>`
+          : nothing
+      }
     </div>`;
   }
 
@@ -806,20 +793,7 @@ export class HeizwerkCard extends LitElement {
     if (!st) return this._error(`${this._s.missing}: ${entityId}`);
     const room = parseRoom(st);
     const sv = statusView(room, this._s, this._fmt, this._planOf(room)?.plan ?? null);
-    const open = !!this._open[entityId];
-    return html`<ha-card class="tile ${open ? "open" : ""}">
-      <div
-        class="row1"
-        role="button"
-        tabindex="0"
-        aria-expanded=${open}
-        @click=${() => this._toggle(entityId)}
-        @keydown=${(e: KeyboardEvent) => (e.key === "Enter" || e.key === " ") && this._toggle(entityId)}
-      >
-        ${this._summary(room, sv)} ${this._stepButtons(room)}
-      </div>
-      ${open ? this._details(room, sv) : nothing}
-    </ha-card>`;
+    return html`<ha-card class="tile">${this._compactRoom(room, sv)}</ha-card>`;
   }
 
   private _renderHouse(entities: string[]): TemplateResult {
@@ -852,17 +826,10 @@ export class HeizwerkCard extends LitElement {
       </div>
       ${entities.map((id) => {
         const st = this.hass!.states[id];
-        if (!st) return html`<div class="rw"><div class="sum err">${s.missing}: ${id}</div></div>`;
+        if (!st) return html`<div class="rw"><div class="err">${s.missing}: ${id}</div></div>`;
         const room = parseRoom(st);
         const sv = statusView(room, s, fmt, this._planOf(room)?.plan ?? null);
-        const open = !!this._open[id];
-        return html`<div class="rw ${open ? "open" : ""}">
-          <button class="sum" aria-expanded=${open} @click=${() => this._toggle(id)}>
-            ${this._summary(room, sv)}
-            <span class="chev" aria-hidden="true">${icon(P.chev, 16)}</span>
-          </button>
-          ${open ? this._details(room, sv) : nothing}
-        </div>`;
+        return html`<div class="rw">${this._compactRoom(room, sv)}</div>`;
       })}
     </ha-card>`;
   }

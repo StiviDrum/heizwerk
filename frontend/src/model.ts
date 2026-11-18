@@ -508,18 +508,48 @@ export function wallNote(room: Room, s: Strings, fmt: Fmt): { text: string; warn
 
 export interface FootItem {
   text: string;
-  warn?: boolean;
+  /** "warn" = amber warning, "obs" = observe-only highlight. */
+  kind?: "warn" | "obs";
 }
 
 /**
- * Footer items after the TRV text: sensor, regulation when two-point.
- * TRV reading while external inputs are configured = the room sensor failed
- * (thermostats run on a stale value) -> extra warning item.
+ * Footer of the standard card: last sync, two-point regulation, observe-only and
+ * the warning when the room sensor failed (TRV reading although Heizwerk feeds
+ * external inputs – the thermostats run on a stale value). Empty = no footer.
  */
-export function footInfo(room: Room, s: Strings): FootItem[] {
-  const trv = room.temperatureSource === "trv";
-  const items: FootItem[] = [{ text: `${s.sensor}: ${trv ? s.sensorTrv : s.sensorRoom}` }];
-  if (trv && room.externalInputs.length) items.push({ text: s.roomSensorMissing, warn: true });
+export function footItems(room: Room, s: Strings, fmt: Fmt): FootItem[] {
+  const items: FootItem[] = [];
+  if (room.temperatureSource === "trv" && room.externalInputs.length)
+    items.push({ text: s.roomSensorMissing, kind: "warn" });
+  if (room.lastSync) items.push({ text: `${s.sync} ${fmtTime(room.lastSync, fmt)}` });
   if (room.regulation === "two_point") items.push({ text: s.twoPoint });
+  if (room.observeOnly) items.push({ text: s.observeOnly, kind: "obs" });
   return items;
+}
+
+/** Label above the day band: "Heute · Plan Heizung Bad" (plan name, fallback id). */
+export function bandTitle(s: Strings, plan: ZeitwerkPlan | null, planId: string | null): string {
+  const name = plan?.name || planId;
+  return name ? `${s.today} · ${s.plan} ${name}` : s.today;
+}
+
+/**
+ * Slim info line of the compact rows (max 3 items): state (window minutes or
+ * manual end), humidity, next change – ventilation hint as filler.
+ */
+export function infoItems(room: Room, s: Strings, fmt: Fmt): string[] {
+  const items: string[] = [];
+  if (room.windowOpen || room.status === "window")
+    items.push(
+      s.windowOpenFor.replace("{min}", String(minutesSince(room.windowOpenSince, fmt.now))),
+    );
+  else if (room.status === "manual" && room.manualUntil)
+    items.push(s.manualUntil.replace("{time}", fmtTime(room.manualUntil, fmt)));
+  if (room.humidity !== null) items.push(`${s.humidity} ${fmtTemp(room.humidity, fmt, 0)} %`);
+  if (room.status !== "manual" && room.nextChange && room.nextProfile)
+    items.push(
+      s.fromTime.replace("{p}", room.nextProfile).replace("{time}", fmtTime(room.nextChange, fmt)),
+    );
+  if (room.ventilationRecommended && !room.windowOpen) items.push(s.ventRecommended);
+  return items.slice(0, 3);
 }

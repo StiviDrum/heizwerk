@@ -76,7 +76,7 @@ export const tokens = css`
     -webkit-tap-highlight-color: transparent;
   }
   button:focus-visible,
-  .sum:focus-visible {
+  .row1:focus-visible {
     outline: 2px solid var(--primary-color, var(--hw-blue));
     outline-offset: 2px;
   }
@@ -101,7 +101,7 @@ export const standardStyles = css`
   .head {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
   }
   h2 {
@@ -382,7 +382,7 @@ export const standardStyles = css`
     border-top: 1px solid var(--hw-line);
     padding-top: 12px;
   }
-  .foot .fwarn {
+  .foot .warn {
     color: var(--hw-amber);
     font-weight: 600;
   }
@@ -396,87 +396,11 @@ export const compactStyles = css`
   .tile {
     border-radius: var(--ha-card-border-radius, 16px);
     color: var(--hw-tx);
-  }
-  .row1 {
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    min-height: 64px;
-    cursor: pointer;
-  }
-  .ic {
-    flex: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: color-mix(in srgb, var(--c) 15%, transparent);
-    color: var(--c);
-  }
-  .nm {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .nm b {
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .nm span {
-    font-size: 12.5px;
-    color: var(--hw-tx2);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tp {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    flex: none;
-  }
-  .tp b {
-    font-size: 18px;
-    font-weight: 600;
-  }
-  .tp span {
-    font-size: 12px;
-    color: var(--hw-tx2);
-  }
-  .step {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    flex: none;
-  }
-  .step button {
-    width: 44px;
-    height: 24px;
-    border: 1px solid var(--hw-line);
-    background: var(--hw-card);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    padding: 0;
-  }
-  .act .step {
-    flex-direction: row;
-    gap: 6px;
-  }
-  .act .step button {
-    width: 44px;
-    height: 36px;
+    padding: 4px 0;
   }
   .card {
     border-radius: var(--ha-card-border-radius, 20px);
-    padding: 14px 16px;
+    padding: 14px 16px 6px;
     display: flex;
     flex-direction: column;
     color: var(--hw-tx);
@@ -517,38 +441,105 @@ export const compactStyles = css`
   .rw {
     border-top: 1px solid var(--hw-line);
   }
-  .sum {
+  /* One compact room: row · info line · bar · (details). */
+  .cr {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px 12px;
+    min-width: 0;
+  }
+  .rw .cr {
+    padding: 10px 4px 12px;
+  }
+  .row1 {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 4px;
     min-height: 52px;
+    min-width: 0;
     cursor: pointer;
-    width: 100%;
-    border: none;
-    background: none;
-    text-align: left;
+    border-radius: 12px;
   }
-  .chev {
-    color: var(--hw-tx2);
-    transition: transform 0.15s;
+  .ic {
     flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--c) 15%, transparent);
+    color: var(--c);
   }
-  .open .chev {
-    transform: rotate(180deg);
-  }
-  .det {
-    padding: 2px 4px 12px 52px;
+  .nm {
+    flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 1px;
   }
-  .tile .det {
-    padding: 0 12px 12px 60px;
+  .nm b {
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nm span,
+  .info {
+    font-size: 12.5px;
+    color: var(--hw-tx2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nm span {
+    color: var(--c);
+  }
+  .tp {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex: none;
+  }
+  .tp b {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+  .tp span {
+    font-size: 12px;
+    color: var(--hw-tx2);
+  }
+  .step {
+    display: flex;
+    gap: 6px;
+    flex: none;
+  }
+  .step button {
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--hw-line);
+    background: var(--hw-card);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .step button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .info {
+    padding-left: 52px;
   }
   .mini {
     position: relative;
     height: 6px;
+    margin: 4px 0 2px;
     border-radius: 3px;
     background: var(--hw-track);
   }
@@ -564,31 +555,23 @@ export const compactStyles = css`
     top: -3px;
     width: 3px;
     height: 12px;
+    margin-left: -1.5px;
     border-radius: 2px;
     background: var(--hw-tx);
   }
-  .kv {
-    font-size: 12.5px;
-    color: var(--hw-tx2);
-  }
-  .act {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .pillrow {
+  .det {
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
+    padding-top: 4px;
   }
   .pill {
-    min-height: 36px;
-    padding: 5px 12px;
+    min-height: 44px;
+    padding: 5px 14px;
     border-radius: 999px;
     border: 1px solid var(--hw-line);
     background: transparent;
-    font-size: 12.5px;
+    font-size: 13px;
     cursor: pointer;
   }
   .pill.on {
@@ -597,8 +580,20 @@ export const compactStyles = css`
     color: var(--hw-violet);
     font-weight: 600;
   }
-  .obs {
-    color: var(--hw-violet);
+  .pill.res {
+    margin-left: auto;
     font-weight: 600;
+    color: var(--hw-violet);
+  }
+  @media (max-width: 420px) {
+    .row1 {
+      gap: 8px;
+    }
+    .info {
+      padding-left: 0;
+    }
+    .tp b {
+      font-size: 19px;
+    }
   }
 `;
