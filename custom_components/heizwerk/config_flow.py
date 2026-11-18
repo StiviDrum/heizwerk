@@ -62,21 +62,24 @@ from .const import (
     SUBENTRY_ROOM,
 )
 
-_SENSOR_TEMP = selector.EntitySelector(
-    selector.EntitySelectorConfig(
-        domain=["sensor", "input_number", "number"], device_class=None
-    )
-)
-
 
 def _entity(
     domain: list[str], multiple: bool = False, device_class: list[str] | None = None
 ) -> selector.EntitySelector:
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(
+    """Entity selector; device_class only when given.
+
+    An explicit ``device_class=None`` serialises to ``[]``, which makes the
+    frontend filter out every entity ("no entities available").
+    """
+    config = selector.EntitySelectorConfig(domain=domain, multiple=multiple)
+    if device_class:
+        config = selector.EntitySelectorConfig(
             domain=domain, multiple=multiple, device_class=device_class
         )
-    )
+    return selector.EntitySelector(config)
+
+
+_SENSOR_TEMP = _entity(["sensor", "input_number", "number"])
 
 
 def _number(
@@ -96,9 +99,8 @@ def _number(
 def _hub_schema() -> vol.Schema:
     return vol.Schema(
         {
-            vol.Optional(CONF_OUTDOOR_TEMPERATURE): _entity(
-                ["sensor", "input_number", "weather"]
-            ),
+            # No weather entities: their state is a condition, not a number.
+            vol.Optional(CONF_OUTDOOR_TEMPERATURE): _entity(["sensor", "input_number"]),
             vol.Optional(CONF_OUTDOOR_HUMIDITY): _entity(["sensor", "input_number"]),
             vol.Optional(CONF_SEASON_ENTITY): _entity(
                 ["input_boolean", "binary_sensor", "switch", "schedule"]

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 – 2026-11-18
+
+- Fix: entity pickers in the Heizwerk options and the room dialog showed
+  "no entities available" (an empty `device_class` filter hid every entity).
+- Outdoor temperature no longer offers `weather` entities (their state is not a
+  number).
+
 ## 0.1.0 – 2026-11-18
 
 - Integration `heizwerk` (HA ≥ 2026.11): one entry with house options, rooms as

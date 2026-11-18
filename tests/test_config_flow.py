@@ -113,3 +113,23 @@ async def test_zeitwerk_plans_offered(hass: HomeAssistant, house) -> None:
     )
     hass.states.async_set("sensor.other", "1", {"plan_id": "nope"})
     assert zeitwerk_plans(hass) == ["heizung_bad"]
+
+
+def _entity_selectors(schema) -> list[dict]:
+    from homeassistant.helpers.selector import EntitySelector
+
+    return [
+        value.serialize()["selector"]["entity"]
+        for value in schema.schema.values()
+        if isinstance(value, EntitySelector)
+    ]
+
+
+async def test_entity_selectors_do_not_filter_everything(hass: HomeAssistant) -> None:
+    """Regression: device_class=None serialised to [] hid every entity."""
+    from custom_components.heizwerk.config_flow import _hub_schema, _room_schema
+
+    selectors = _entity_selectors(_hub_schema()) + _entity_selectors(_room_schema(hass))
+    assert len(selectors) == 11
+    for sel in selectors:
+        assert sel.get("device_class") != [], sel
