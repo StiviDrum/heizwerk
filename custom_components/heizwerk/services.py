@@ -64,11 +64,13 @@ def async_setup_services(hass: HomeAssistant) -> None:
             duration = None
         user = await _user_name(hass, call)
         for room in _rooms(hass, call):
-            room.set_manual(call.data[ATTR_TEMPERATURE], duration, user)
+            await room.async_set_manual(
+                call.data[ATTR_TEMPERATURE], duration, user, call.context
+            )
 
     async def resume(call: ServiceCall) -> None:
         for room in _rooms(hass, call):
-            room.resume()
+            await room.async_resume()
 
     async def sync(call: ServiceCall) -> None:
         for room in _rooms(hass, call):

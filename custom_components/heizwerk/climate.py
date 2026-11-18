@@ -116,7 +116,9 @@ class HeizwerkClimate(HeizwerkEntity, ClimateEntity, RestoreEntity):
             return
         if (mode := kwargs.get("hvac_mode")) is not None:
             self.room.set_enabled(mode != HVACMode.OFF)
-        self.room.set_target(float(temperature), await self._user_name())
+        await self.room.async_set_target(
+            float(temperature), await self._user_name(), self._context
+        )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Switch the room on/off."""
@@ -134,7 +136,9 @@ class HeizwerkClimate(HeizwerkEntity, ClimateEntity, RestoreEntity):
         self, temperature: float, duration: timedelta | None
     ) -> None:
         """Service heizwerk.set_manual."""
-        self.room.set_manual(temperature, duration, await self._user_name())
+        await self.room.async_set_manual(
+            temperature, duration, await self._user_name(), self._context
+        )
 
     async def _user_name(self) -> str | None:
         if self._context is None or self._context.user_id is None:

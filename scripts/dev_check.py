@@ -42,6 +42,8 @@ SHELL = Path(
 # Missing system libs (libnss3, libnspr4)? Extract them without root
 # (apt-get download + dpkg -x) and point HEIZWERK_CHROME_LIBS at the .so dir.
 LIBS = os.environ.get("HEIZWERK_CHROME_LIBS", "")
+TARGET_BAD = "input_number.temperaturspeicher_bad"
+PROFILE_BAD = "sensor.zeitwerk_heizung_bad_profile"
 DEV_USER = {"username": "dev", "password": "dev-dev-dev"}
 
 PLAN = {
@@ -300,21 +302,19 @@ async def scenarios(api: Api) -> list[str]:
         if not cond:
             fails.append(msg)
 
-    # Baseline
+    # Baseline: plan value from Zeitwerk itself (setting the target by hand
+    # would be a manual override in Zeitwerk's eyes).
     await api.call(
         "input_boolean", "turn_off", entity_id="input_boolean.sim_fenster_bad"
     )
     await api.call(
         "input_boolean", "turn_off", entity_id="input_boolean.sim_sperre_kueche"
     )
-    await api.call(
-        "input_number",
-        "set_value",
-        entity_id="input_number.temperaturspeicher_bad",
-        value=22,
-    )
+    await api.call("zeitwerk", "clear_force", plan="heizung_bad")
+    await api.call("zeitwerk", "resume", plan=["heizung_bad"])
     await api.call("heizwerk", "resume", entity_id=[bad, kue])
     await asyncio.sleep(12)
+    plan_value = float((await api.state(TARGET_BAD))["state"])
     st = await api.state(bad)
     show(
         "Bad",
@@ -332,8 +332,8 @@ async def scenarios(api: Api) -> list[str]:
         "Bad regelt (heating/reached)",
     )
     check(
-        trv["state"] == "heat" and trv["attributes"]["temperature"] == 21.5,
-        "TRV Bad auf heat 21,5 (22 − 0,5 K)",
+        trv["state"] == "heat" and trv["attributes"]["temperature"] == plan_value - 0.5,
+        f"TRV Bad auf heat {plan_value - 0.5} (Planwert {plan_value} − 0,5 K)",
     )
     ext = await api.state("input_number.sim_trv_bad_external")
     check(float(ext["state"]) == 18.5, "Externe Temperatur an TRV Bad gesendet (18,5)")
@@ -384,28 +384,109 @@ async def scenarios(api: Api) -> list[str]:
         "input_boolean", "turn_off", entity_id="input_boolean.sim_sperre_kueche"
     )
 
-    # Manual override, then Zeitwerk target change ends it
+    # Manual override through Zeitwerk (visible there)
+    async def zw_manual() -> bool:
+        attrs = (await api.state(PROFILE_BAD)).get("attributes", {})
+        return bool(attrs.get("manual_override"))
+
     await api.call("heizwerk", "set_manual", entity_id=bad, temperature=23.5)
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
     st = await api.state(bad)
-    show("Bad manuell", st, "status", "temperature", "manual_until", "manual_by")
-    check(st["attributes"]["status"] == "manual", "Manuell 23,5 aktiv")
-    check(st["attributes"]["manual_by"] == "Dev", "Manuell: Benutzer erkannt")
-    await api.call(
-        "input_number",
-        "set_value",
-        entity_id="input_number.temperaturspeicher_bad",
-        value=18,
+    show(
+        "Bad manuell",
+        st,
+        "status",
+        "temperature",
+        "scheduled_target",
+        "manual_until",
+        "manual_by",
+        "manual_source",
     )
-    await asyncio.sleep(1)
+    check(
+        float((await api.state(TARGET_BAD))["state"]) == 23.5,
+        "Manuell: Wert im Zeitwerk-Ziel",
+    )
+    check(await zw_manual(), "Zeitwerk zeigt manuelle Übersteuerung")
+    check(st["attributes"]["status"] == "manual", "Heizwerk: Status manual")
+    check(st["attributes"]["manual_source"] == "zeitwerk", "Heizwerk: Quelle zeitwerk")
+    check(st["attributes"]["manual_by"] == "Dev", "Heizwerk: Benutzer erkannt")
+    check(
+        st["attributes"]["scheduled_target"] == plan_value,
+        "Heizwerk: Planwert bleibt sichtbar",
+    )
+    await asyncio.sleep(11)
+    trv = await api.state("climate.trv_bad")
+    check(
+        trv["attributes"]["temperature"] == 23.0, "TRV Bad folgt Übersteuerung (23,0)"
+    )
+
+    # "Next block": Zeitwerk applies another profile
+    other = (
+        "eco"
+        if (await api.state(PROFILE_BAD))["attributes"].get("profile_id") == "comfort"
+        else "comfort"
+    )
+    await api.call(
+        "zeitwerk",
+        "force_profile",
+        plan="heizung_bad",
+        profile=other,
+        duration="00:05:00",
+    )
+    await asyncio.sleep(2)
     st = await api.state(bad)
-    check(st["attributes"]["status"] != "manual", "Neuer Zeitwerk-Wert beendet manuell")
-    await api.call(
-        "input_number",
-        "set_value",
-        entity_id="input_number.temperaturspeicher_bad",
-        value=22,
+    check(
+        st["attributes"]["status"] != "manual",
+        "Neuer Zeitwerk-Block beendet Übersteuerung",
     )
+    check(not await zw_manual(), "Zeitwerk: Übersteuerung beendet")
+    await api.call("zeitwerk", "clear_force", plan="heizung_bad")
+    await api.call("zeitwerk", "resume", plan=["heizung_bad"])
+    await asyncio.sleep(1)
+
+    # Resume from Heizwerk ends it in Zeitwerk too
+    await api.call("heizwerk", "set_manual", entity_id=bad, temperature=24)
+    await asyncio.sleep(2)
+    await api.call("heizwerk", "resume", entity_id=bad)
+    await asyncio.sleep(2)
+    check(not await zw_manual(), "Heizwerk-Fortsetzen beendet Zeitwerk-Übersteuerung")
+    check(
+        float((await api.state(TARGET_BAD))["state"]) == plan_value,
+        "Planwert wieder im Ziel",
+    )
+
+    # Override started in Zeitwerk (target changed outside Zeitwerk)
+    await api.call("input_number", "set_value", entity_id=TARGET_BAD, value=21)
+    await asyncio.sleep(2)
+    st = await api.state(bad)
+    check(
+        st["attributes"]["status"] == "manual"
+        and st["attributes"]["manual_source"] == "zeitwerk",
+        "Übersteuerung aus Zeitwerk wird in Heizwerk angezeigt",
+    )
+    await api.call("zeitwerk", "resume", plan=["heizung_bad"])
+    await asyncio.sleep(1)
+
+    # Duration: ends via zeitwerk.resume
+    await api.call(
+        "heizwerk", "set_manual", entity_id=bad, temperature=23, duration={"minutes": 1}
+    )
+    await asyncio.sleep(2)
+    check(await zw_manual(), "Dauer 1 min: Zeitwerk zeigt Übersteuerung")
+    await asyncio.sleep(63)
+    check(not await zw_manual(), "Dauer abgelaufen: Zeitwerk-Übersteuerung beendet")
+    check(
+        float((await api.state(TARGET_BAD))["state"]) == plan_value,
+        "Dauer abgelaufen: Planwert zurück",
+    )
+
+    # Observe-only room never writes its target
+    before = (await api.state("input_number.temperaturspeicher_kueche"))["state"]
+    await api.call("heizwerk", "set_manual", entity_id=kue, temperature=21)
+    await asyncio.sleep(1)
+    after = (await api.state("input_number.temperaturspeicher_kueche"))["state"]
+    check(before == after, "Nur beobachten: Ziel der Küche unverändert")
+    await api.call("heizwerk", "resume", entity_id=kue)
 
     # Zeitwerk interfaces
     prof = await api.state("sensor.zeitwerk_heizung_bad_profile")
@@ -505,7 +586,14 @@ async def dashboard(api: Api) -> None:
                     {
                         "title": "Standard",
                         "path": "standard",
-                        "cards": [{"type": "custom:heizwerk-card", "entity": rooms[0]}],
+                        "cards": [
+                            {"type": "custom:heizwerk-card", "entity": rooms[0]},
+                            {
+                                "type": "custom:zeitwerk-card",
+                                "view": "week",
+                                "plan": "heizung_bad",
+                            },
+                        ],
                     },
                     {
                         "title": "Kompakt",
@@ -539,8 +627,12 @@ async def screenshots(
     fails: list[str] = []
     await dashboard(api)
     # A lively state for the pictures: window open in the bath, manual in the kitchen.
+    # Bath: manual override (shown in Zeitwerk too); window open in the kitchen.
     await api.call(
-        "input_boolean", "turn_on", entity_id="input_boolean.sim_fenster_bad"
+        "heizwerk", "set_manual", entity_id="climate.heizwerk_bad", temperature=23.5
+    )
+    await api.call(
+        "input_boolean", "turn_on", entity_id="input_boolean.sim_fenster_kueche"
     )
     await api.call(
         "heizwerk",
@@ -631,9 +723,13 @@ async def screenshots(
     finally:
         proc.terminate()
         await api.call(
-            "input_boolean", "turn_off", entity_id="input_boolean.sim_fenster_bad"
+            "input_boolean", "turn_off", entity_id="input_boolean.sim_fenster_kueche"
         )
-        await api.call("heizwerk", "resume", entity_id="climate.heizwerk_kuche")
+        await api.call(
+            "heizwerk",
+            "resume",
+            entity_id=["climate.heizwerk_kuche", "climate.heizwerk_bad"],
+        )
     return fails
 
 

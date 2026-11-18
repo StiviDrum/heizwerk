@@ -36,7 +36,8 @@ Interna.
 | `sensor.zeitwerk_<plan>_next_change` – Zeitstempel; Attribute `next_profile`, `next_profile_name` | „Komfort bis 07:30“, Ende der manuellen Übersteuerung „bis nächster Block“ |
 | WebSocket `zeitwerk/plans/get` {plan_id} (kein Admin nötig) → Plan inkl. `profiles[].actions` und `status` | Karte: Profile mit Name, Farbe, Aktionen → Wert pro Profil für die Ziel-Entität |
 | WebSocket `zeitwerk/preview` {plan_ids, start?, end?} (kein Admin) → `{plans: {plan_id: [{start, end, profile}]}}` | Karte: Tagesband „Heute“ |
-| Zeitwerk erkennt manuelle Änderungen an der Ziel-Entität über einen fremden `context` | Heizwerk schreibt **nie** in die Ziel-Entität. Manuelle Übersteuerung lebt nur in Heizwerk, Zeitwerk bleibt unberührt. |
+| Zeitwerk erkennt manuelle Änderungen an der Ziel-Entität über einen fremden `context` (Attribute `manual_override`, `manual_since`, `manual_until` am Profilsensor) | **Übersteuerung über Zeitwerk** (ab 0.2, Wunsch Steven 2026-11-18): Heizwerk schreibt den manuellen Wert in die Ziel-Entität, Zeitwerk zeigt ihn als manuelle Übersteuerung und beendet sie beim nächsten Block. Gilt nur mit Zeitwerk-Ziel **und** Plan **und** ohne „Nur beobachten“ – sonst bleibt die Übersteuerung intern (das Ziel kann in der Parallelphase noch die alte Heizungssteuerung speisen). |
+| Dienst `zeitwerk.resume` {plan} | Ende einer Übersteuerung mit Dauer (1 h / 3 h), „Fortsetzen“ in Heizwerk, Rückkehr auf den Planwert |
 
 Alternative ohne Ziel-Entität: Ein Zeitwerk-Profil kann direkt
 `climate.set_temperature` auf `climate.heizwerk_<raum>` ausführen. Dann ist jede
@@ -109,10 +110,18 @@ wirksam   = manuell (falls aktiv)          | sonst geplant
 ```
 
 Manuelle Übersteuerung (`climate.set_temperature` mit Zeitwerk-Ziel,
-`heizwerk.set_manual`): Dauer `until_next` (Standard) endet beim nächsten
-Zeitwerk-Wechsel (`next_change`) oder wenn sich das Zeitwerk-Ziel ändert;
-`duration` endet nach Ablauf. `heizwerk.resume` beendet sofort. Wer übersteuert
-hat, steht in `manual_by` (HA-Benutzername aus dem Context).
+`heizwerk.set_manual`), wer übersteuert hat, steht in `manual_by`:
+
+- **Über Zeitwerk** (Ziel + Plan, nicht „Nur beobachten“): Der Wert wird in die
+  Ziel-Entität geschrieben; Zeitwerk zeigt „Manuell“ und setzt beim nächsten
+  Profilwechsel den Planwert zurück (`until_next`). Dauer (1 h / 3 h): Heizwerk
+  ruft nach Ablauf `zeitwerk.resume` auf. „Fortsetzen“ (Heizwerk- oder
+  Zeitwerk-Karte) beendet beides. Wird der Planwert eingestellt, ist das ein
+  Fortsetzen. Übersteuerungen, die in Zeitwerk entstehen, zeigt Heizwerk ebenfalls
+  (`manual_source: zeitwerk`). `scheduled_target` zeigt weiter den Planwert.
+  Voraussetzung im Plan: `manual_override` nicht `ignore`.
+- **Intern** (sonst): `until_next` endet beim nächsten Zeitwerk-Wechsel
+  (`next_change`) oder wenn sich das Ziel ändert; `duration` nach Ablauf.
 
 ### 4.2 Status (Priorität von oben)
 
@@ -167,7 +176,7 @@ Attribute von `climate.heizwerk_<raum>` (Schnittstelle zur Karte):
 
 `room_name`, `status`, `locks` [{type, entity_id?, since}], `scheduled_target`,
 `manual_target`, `manual_until`, `manual_mode` (`until_next`/`duration`),
-`manual_by`, `target_entity`, `zeitwerk_plan`, `zeitwerk_profile`,
+`manual_by`, `manual_source` (`zeitwerk`/`heizwerk`), `target_entity`, `zeitwerk_plan`, `zeitwerk_profile`,
 `next_change`, `next_profile`, `temperature_source` (`sensor`/`trv`),
 `trvs` [{entity_id, state, available, setpoint, current}], `trv_unavailable_since`,
 `planned_commands` [{entity_id, hvac_mode, temperature?}], `last_sync`,

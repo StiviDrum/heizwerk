@@ -24,7 +24,10 @@ sensor, locks, manual override and room-climate hints.
   16 °C for 10 min), any extra lock entity. Locked = thermostat off (frost
   protection in the device) or heat to a frost temperature.
 - **Manual override** until the next Zeitwerk change or for 1 h / 3 h / any
-  duration; resume at any time. Heizwerk never writes to the Zeitwerk target.
+  duration; resume at any time. With a Zeitwerk target and plan (and observe-only
+  off) the override is written to the Zeitwerk target, so Zeitwerk shows it as a
+  manual change and ends it with the next block; in observe-only mode the target
+  is never touched.
 - **Room climate**: dew point, wall humidity with mold level, airing
   recommendation and "aired enough" event.
 - **Card** `custom:heizwerk-card`, registered automatically – standard room card
@@ -98,7 +101,8 @@ sensors and windows as helpers) and copies Zeitwerk from `../zeitwerk` if presen
 **Zeitwerk plant, Heizwerk regelt.** Zeitwerk legt fest, welcher Sollwert gilt;
 Heizwerk setzt ihn pro Raum an den Thermostaten um – mit externem Raumfühler,
 Korrektur, Sperren (Fenster, Heizperiode, Sommerabschaltung, eigene Sperren),
-manueller Übersteuerung (bis nächster Block / 1 Std. / 3 Std.) und Raumklima
+manueller Übersteuerung (bis nächster Block / 1 Std. / 3 Std., auch in Zeitwerk
+sichtbar) und Raumklima
 (Taupunkt, Wandfeuchte, Lüftungsempfehlung).
 
 **Neue Räume starten im Modus „Nur beobachten“**: Heizwerk rechnet alles und

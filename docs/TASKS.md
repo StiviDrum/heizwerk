@@ -27,6 +27,12 @@ Stand nach jeder Aufgabe aktualisieren. Branch: `claude/heizwerk-0.1`.
 ## M3 – Doku
 - [x] README (en + de), CHANGELOG
 
+## 0.2 – Übersteuerung in Zeitwerk sichtbar (Wunsch Steven 2026-11-18)
+- [x] Manueller Wert ins Zeitwerk-Ziel, Ende über Zeitwerk (Block, `zeitwerk.resume`)
+- [x] Übersteuerung aus Zeitwerk in Heizwerk anzeigen
+- [x] Nur beobachten schreibt nie ins Ziel
+- [x] Tests + Dev-Test gegen echtes Zeitwerk (Zeitwerk-Karte zeigt „Manuell … von Heizwerk-Wert“)
+
 ## Offen / später
 - [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bewusst nicht in 0.1
 - [ ] Brand-Icons (`custom_components/heizwerk/brand/`)

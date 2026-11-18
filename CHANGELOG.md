@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 – 2026-11-18
+
+- Manual overrides are visible in Zeitwerk: with a Zeitwerk target and plan
+  (observe-only off) Heizwerk writes the manual value to the Zeitwerk target;
+  Zeitwerk shows it as a manual change and ends it with the next block.
+  Durations end via `zeitwerk.resume`, "Resume" in either card ends both.
+- Overrides started in Zeitwerk are shown in Heizwerk (`manual_source`).
+- Observe-only rooms never write to the Zeitwerk target.
+
 ## 0.1.1 – 2026-11-18
 
 - Fix: entity pickers in the Heizwerk options and the room dialog showed
