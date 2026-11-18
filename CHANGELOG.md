@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1 – 2026-11-18
+
+- Compact card redesigned for full width: status icon, name with status,
+  current and target temperature, − / + side by side, info line (window /
+  manual end, humidity, next change) and a progress bar; same layout in the
+  house list.
+- Standard card decluttered: header shows only the room name; the plan name is
+  shown above the day band; footer only when needed (sync time, two-point,
+  observe-only, missing room sensor) – no more "TRV heats to" / "sensor".
+- Room dialog: option fields are dropdowns. HA 2026.11 squeezes the radio dot's
+  16×16 SVG to 11.2×14 px, so the dot sat off-centre.
+- Brand: icon and logo for Home Assistant (`custom_components/heizwerk/brand`),
+  SVG sources and social preview in `docs/brand`, icon in the README.
+
 ## 0.5.0 – 2026-11-18
 
 Everything needed to retire the old heating automations.

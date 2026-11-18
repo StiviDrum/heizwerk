@@ -914,20 +914,27 @@ async def dashboard(api: Api) -> None:
                     {
                         "title": "Kompakt",
                         "path": "kompakt",
-                        "cards": [
+                        "type": "sections",
+                        "max_columns": 1,
+                        "sections": [
                             {
-                                "type": "custom:heizwerk-card",
-                                "variant": "compact",
-                                "entity": e,
-                            }
-                            for e in rooms
-                        ]
-                        + [
-                            {
-                                "type": "custom:heizwerk-card",
-                                "variant": "compact",
-                                "title": "Heizung",
-                                "entities": rooms,
+                                "type": "grid",
+                                "cards": [
+                                    {
+                                        "type": "custom:heizwerk-card",
+                                        "variant": "compact",
+                                        "entity": e,
+                                    }
+                                    for e in rooms
+                                ]
+                                + [
+                                    {
+                                        "type": "custom:heizwerk-card",
+                                        "variant": "compact",
+                                        "title": "Heizung",
+                                        "entities": rooms,
+                                    }
+                                ],
                             }
                         ],
                     },
@@ -1156,7 +1163,7 @@ async def screenshots(
                         await cdp.js(
                             "(async () => { const cards = window.__findAll('heizwerk-card');"
                             " const house = cards[cards.length - 1];"
-                            " house.shadowRoot.querySelector('.sum').click();"
+                            " house.shadowRoot.querySelector('.rw .row1').click();"
                             " await house.updateComplete; return true })()"
                         )
                         await asyncio.sleep(1)

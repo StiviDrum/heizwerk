@@ -1,6 +1,6 @@
 # Heizwerk – Aufgaben
 
-Stand nach jeder Aufgabe aktualisieren. Aktuelle Version: **0.5.0**. Arbeits-Branch: `claude/heizwerk-0.1` (Name historisch), Standard-Branch `main`.
+Stand nach jeder Aufgabe aktualisieren. Aktuelle Version: **0.5.1**. Arbeits-Branch: `claude/heizwerk-0.1` (Name historisch), Standard-Branch `main`.
 Die Abschnitte unten sind die Historie je Version; maßgeblich für den Ist-Stand sind README und SPEC.
 
 ## M0 – Gerüst
@@ -112,9 +112,16 @@ Dev-Test: Drehen am TRV, Zweipunkt, Schimmel-Indikator in der Dev-Instanz OK;
 Erkennung von Eingang/Messquelle am TRVZB-Gerät nur per Test (Dev-TRVs haben
 kein Gerät).
 
+## 0.5.1 – Karte und Dialog (Feedback Steven 2026-11-18)
+- [x] Kompaktkarte volle Breite, übersichtliches Layout (Karten-Agent)
+- [x] Standardkarte: Profil/Plan aus dem Kopf, Plan über dem Tagesband, Fußzeile ohne TRV/Fühler
+- [x] Auswahlfelder als Klappliste (Radio-Punkt in HA 2026.11 versetzt – gemessen: SVG 11,2 × 14 px statt quadratisch)
+- [x] Brand: HA-Icons aus den SVGs gerendert, `docs/brand` ins Repo
+- [ ] Brand-Dateien laut BRANDING.md noch nicht vorhanden: transparentes Icon, dunkles Logo, README-PNGs
+- [ ] Social Preview in GitHub hochladen (Settings → General, keine API)
+
 ## Offen / später
 - [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bisher bewusst nicht umgesetzt
-- [ ] Brand-Icons (`custom_components/heizwerk/brand/`)
 - [x] Release 0.1.0 getaggt (Freigabe Steven 2026-11-18)
 - [ ] Produktiv-Einsatz: nur nach Freigabe (Hausregeln 1.4), Raum für Raum zuerst „Nur beobachten“ parallel zu den bestehenden Automationen
 

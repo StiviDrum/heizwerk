@@ -1,7 +1,7 @@
 # Heizwerk – Spezifikation
 
 > Sprache: Deutsch. Code, Kommentare, Bezeichner, Commits: Englisch.
-> Stand: Version 0.5.0 (2026-11-18) · Mindestversion Home Assistant **2026.11**
+> Stand: Version 0.5.1 (2026-11-18) · Mindestversion Home Assistant **2026.11**
 
 ## 1. Idee
 
@@ -79,7 +79,8 @@ Läutwerk-Dienste zur Referenz: `laeutwerk.trigger` {rule}, `acknowledge`,
 ### 3.2 Raum (Config-Subentry `room`, über „Raum hinzufügen“)
 
 Dialog: oben Name, Thermostate, Raumfühler, Nur beobachten; darunter zugeklappte
-Abschnitte. Felder erscheinen nur, wenn sie wirken (HA-Sichtbarkeitsbedingungen).
+Abschnitte. Auswahlfelder als Klappliste (HA 2026.11 zeichnet Radio-Punkte
+versetzt). Felder erscheinen nur, wenn sie wirken (HA-Sichtbarkeitsbedingungen).
 Gespeichert wird flach (Schlüssel wie unten).
 
 | Abschnitt | Option | Bedeutung | Standard |
@@ -223,15 +224,18 @@ dial_max: 26
 manual_duration: next    # next | 60 | 180 (Minuten) – Standard für ± in der Standardkarte
 ```
 
-- **Standard** (Mockup `mockups/heizwerk-karte-standard.html`): Kopf (Raum, Profil,
-  Plan, ⋯ → Mehr-Info), Zustands-Chip, Dial Ist/Ziel, ± Ziel, nächster Wechsel,
-  Hinweis (Lüften/Schimmel), Raumklima (Feuchte, Taupunkt, Wandfeuchte),
-  Tagesband aus Zeitwerk, Fußzeile (TRV, Fühler, Abgleich, Zweipunkt, Nur
-  beobachten, Warnung „Raumfühler fehlt“).
-- **Kompakt** (Mockup `mockups/heizwerk-karte-kompakt.html`): `entity` → Einzelkachel
-  (eine Zeile, ± ), `entities` → Hausliste mit aufklappbaren Zeilen (Mini-Balken,
-  Kennwerte, ±, Dauer-Pillen „Bis nächster Block / 1 Std. / 3 Std.“ – nur mit
-  Fortsetzen-Aktion).
+- **Standard** (Mockup `mockups/heizwerk-karte-standard.html`, ab 0.5.1 vereinfacht):
+  Kopf nur Raumname + ⋯ (Mehr-Info), Zustands-Chip, Dial Ist/Ziel, ± Ziel,
+  nächster Wechsel, Hinweis (Lüften/Schimmel), Raumklima (Feuchte, Taupunkt,
+  Wandfeuchte), Tagesband mit Titel „Heute · Plan <Name>“, Fußzeile nur bei
+  Bedarf (Abgleich, Zweipunkt, Nur beobachten, Warnung „Raumfühler fehlt“).
+- **Kompakt** (ab 0.5.1, volle Breite): je Raum Status-Symbol, Name mit Status,
+  Ist groß + Ziel, − / + nebeneinander (44 px), darunter eine Infozeile (Fenster
+  bzw. „Manuell bis …“, Feuchte, nächster Wechsel, Lüften) und ein Balken
+  Ist → Ziel. `entity` → Einzelkarte, `entities` → Hausliste mit Kopf
+  (Heizperiode, Außen, offene Fenster). Antippen klappt Dauer-Pillen „Bis
+  nächster Block / 1 Std. / 3 Std.“ und Fortsetzen auf (nur mit
+  Fortsetzen-Aktion), sonst öffnet es den Mehr-Info-Dialog.
 - Standard: Ziel am Kreis ziehbar (Touch/Maus, 0,5 K, Senden beim Loslassen),
   Tastatur (Pfeile, Bild auf/ab), ARIA-Slider.
 - Nutzt HA-Theme-Variablen, hell/dunkel, Touch-Ziele ≥ 44 px, kein Hover-Zwang,
