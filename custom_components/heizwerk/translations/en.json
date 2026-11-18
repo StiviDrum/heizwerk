@@ -78,7 +78,7 @@
             "lock_entities": "Heating is locked while one of these is on.",
             "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K.",
             "regulation": "Offset additionally compensates the difference between thermostat reading and room sensor.",
-            "external_temperature_entities": "e.g. number.<trv>_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
+            "external_temperature_entities": "e.g. number.…_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
             "observe_only": "Heizwerk computes everything and shows what it would send, but does not touch the thermostats."
           }
         },
@@ -114,7 +114,7 @@
             "lock_entities": "Heating is locked while one of these is on.",
             "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K.",
             "regulation": "Offset additionally compensates the difference between thermostat reading and room sensor.",
-            "external_temperature_entities": "e.g. number.<trv>_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
+            "external_temperature_entities": "e.g. number.…_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
             "observe_only": "Heizwerk computes everything and shows what it would send, but does not touch the thermostats."
           }
         }
@@ -196,7 +196,7 @@
       "fields": {
         "entity_id": {
           "name": "Room",
-          "description": "climate.heizwerk_<room>"
+          "description": "Heizwerk room, e.g. climate.heizwerk_bad"
         },
         "temperature": {
           "name": "Temperature",
@@ -214,7 +214,7 @@
       "fields": {
         "entity_id": {
           "name": "Room",
-          "description": "climate.heizwerk_<room>"
+          "description": "Heizwerk room, e.g. climate.heizwerk_bad"
         }
       }
     },
@@ -224,7 +224,7 @@
       "fields": {
         "entity_id": {
           "name": "Room",
-          "description": "climate.heizwerk_<room>"
+          "description": "Heizwerk room, e.g. climate.heizwerk_bad"
         }
       }
     }

@@ -78,7 +78,7 @@
             "lock_entities": "Solange eine davon an ist, ist die Heizung gesperrt.",
             "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K.",
             "regulation": "Offset gleicht zusätzlich die Differenz zwischen Thermostat-Eigenmessung und Raumfühler aus.",
-            "external_temperature_entities": "z. B. number.<trv>_external_temperature_input (Sonoff TRVZB). Erhält die Raumtemperatur.",
+            "external_temperature_entities": "z. B. number.…_external_temperature_input (Sonoff TRVZB). Erhält die Raumtemperatur.",
             "observe_only": "Heizwerk rechnet alles und zeigt an, was es senden würde, fasst die Thermostate aber nicht an."
           }
         },
@@ -114,7 +114,7 @@
             "lock_entities": "Solange eine davon an ist, ist die Heizung gesperrt.",
             "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K.",
             "regulation": "Offset gleicht zusätzlich die Differenz zwischen Thermostat-Eigenmessung und Raumfühler aus.",
-            "external_temperature_entities": "z. B. number.<trv>_external_temperature_input (Sonoff TRVZB). Erhält die Raumtemperatur.",
+            "external_temperature_entities": "z. B. number.…_external_temperature_input (Sonoff TRVZB). Erhält die Raumtemperatur.",
             "observe_only": "Heizwerk rechnet alles und zeigt an, was es senden würde, fasst die Thermostate aber nicht an."
           }
         }
@@ -196,7 +196,7 @@
       "fields": {
         "entity_id": {
           "name": "Raum",
-          "description": "climate.heizwerk_<room>"
+          "description": "Heizwerk-Raum, z. B. climate.heizwerk_bad"
         },
         "temperature": {
           "name": "Temperatur",
@@ -214,7 +214,7 @@
       "fields": {
         "entity_id": {
           "name": "Raum",
-          "description": "climate.heizwerk_<room>"
+          "description": "Heizwerk-Raum, z. B. climate.heizwerk_bad"
         }
       }
     },
@@ -224,7 +224,7 @@
       "fields": {
         "entity_id": {
           "name": "Raum",
-          "description": "climate.heizwerk_<room>"
+          "description": "Heizwerk-Raum, z. B. climate.heizwerk_bad"
         }
       }
     }
