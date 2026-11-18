@@ -429,3 +429,51 @@ export function stepTarget(value: number, delta: number, room: Room): number {
   const v = Math.round((value + delta) / step) * step;
   return Math.max(room.minTemp, Math.min(room.maxTemp, Math.round(v * 100) / 100));
 }
+
+// --- Dial interaction ---------------------------------------------------------
+
+/**
+ * Fraction (0..1) of a point (viewBox coordinates) on the 270° dial arc.
+ * Points in the 90° gap at the bottom snap to the nearer end.
+ */
+export function pointToFraction(x: number, y: number): number {
+  const deg = (Math.atan2(y - DIAL.cy, x - DIAL.cx) * 180) / Math.PI;
+  const rel = (((deg - DIAL.start) % 360) + 360) % 360;
+  if (rel <= DIAL.sweep) return rel / DIAL.sweep;
+  // Gap: first half lies next to the end (1), second half next to the start (0).
+  return rel - DIAL.sweep < (360 - DIAL.sweep) / 2 ? 1 : 0;
+}
+
+/** Dial fraction → target, rounded to the step and clamped to room + dial range. */
+export function fractionToValue(
+  f: number,
+  min: number,
+  max: number,
+  step: number,
+  room: Pick<Room, "minTemp" | "maxTemp">,
+): number {
+  const st = step > 0 ? step : 0.5;
+  const raw = min + Math.max(0, Math.min(1, f)) * (max - min);
+  const v = Math.round(Math.round(raw / st) * st * 100) / 100;
+  const lo = Math.max(room.minTemp, Math.min(min, max));
+  const hi = Math.min(room.maxTemp, Math.max(min, max));
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/** Keyboard delta for the dial slider (null = key not handled). */
+export function keyDelta(key: string, step: number): number | null {
+  switch (key) {
+    case "ArrowUp":
+    case "ArrowRight":
+      return step;
+    case "ArrowDown":
+    case "ArrowLeft":
+      return -step;
+    case "PageUp":
+      return 1;
+    case "PageDown":
+      return -1;
+    default:
+      return null;
+  }
+}

@@ -14,8 +14,11 @@ import {
   fmtTemp,
   fmtTime,
   fraction,
+  fractionToValue,
+  keyDelta,
   nextValue,
   parseRoom,
+  pointToFraction,
   roomNote,
   statusView,
   stepTarget,
@@ -55,6 +58,13 @@ export interface CardConfig {
 }
 
 type Duration = "next" | 60 | 180;
+
+interface DragState {
+  pointerId: number;
+  el: Element;
+  room: Room;
+  value: number | null;
+}
 
 interface PlanData {
   plan: ZeitwerkPlan | null;
@@ -113,6 +123,7 @@ export class HeizwerkCard extends LitElement {
     _open: { state: true },
     _duration: { state: true },
     _pending: { state: true },
+    _dragging: { state: true },
   };
 
   static styles = [tokens, standardStyles, compactStyles];
@@ -124,6 +135,8 @@ export class HeizwerkCard extends LitElement {
   private _duration: Record<string, Duration> = {};
   private _pending: Record<string, number> = {};
   private _timers: Record<string, number> = {};
+  private _dragging = false;
+  private _drag: DragState | null = null;
   private _loading = new Set<string>();
 
   setConfig(config: CardConfig): void {
@@ -182,6 +195,7 @@ export class HeizwerkCard extends LitElement {
     super.disconnectedCallback();
     for (const t of Object.values(this._timers)) window.clearTimeout(t);
     this._timers = {};
+    this._endDrag(false);
   }
 
   // --- Zeitwerk data ----------------------------------------------------------
@@ -256,10 +270,111 @@ export class HeizwerkCard extends LitElement {
     ev?.stopPropagation();
     const base = this._shownTarget(room);
     if (base === null) return;
-    const value = stepTarget(base, delta, room);
+    this._schedule(room, stepTarget(base, delta, room), CLICK_DELAY);
+  }
+
+  /** Show `value` right away and commit it after `delay` ms (debounced per room). */
+  private _schedule(room: Room, value: number, delay: number): void {
     this._pending = { ...this._pending, [room.entityId]: value };
     window.clearTimeout(this._timers[room.entityId]);
-    this._timers[room.entityId] = window.setTimeout(() => this._commit(room, value), CLICK_DELAY);
+    this._timers[room.entityId] = window.setTimeout(() => this._commit(room, value), delay);
+  }
+
+  // --- Dial dragging / keyboard ---------------------------------------------------
+
+  private _dialRange(): [number, number] {
+    return [this._config?.dial_min ?? 12, this._config?.dial_max ?? 26];
+  }
+
+  /** Client coordinates → viewBox coordinates (handles CSS scaling). */
+  private _toViewBox(svgEl: SVGSVGElement, e: PointerEvent): { x: number; y: number } {
+    const ctm = svgEl.getScreenCTM?.();
+    if (ctm) {
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+      return { x: p.x, y: p.y };
+    }
+    const r = svgEl.getBoundingClientRect();
+    const vb = svgEl.viewBox.baseVal;
+    return {
+      x: vb.x + ((e.clientX - r.left) * vb.width) / (r.width || 1),
+      y: vb.y + ((e.clientY - r.top) * vb.height) / (r.height || 1),
+    };
+  }
+
+  private _dragValue(room: Room, svgEl: SVGSVGElement, e: PointerEvent): number {
+    const { x, y } = this._toViewBox(svgEl, e);
+    const [min, max] = this._dialRange();
+    return fractionToValue(pointToFraction(x, y), min, max, room.step, room);
+  }
+
+  private _dragTo(room: Room, value: number): void {
+    if (!this._drag) return;
+    this._drag.value = value;
+    window.clearTimeout(this._timers[room.entityId]);
+    delete this._timers[room.entityId];
+    if (this._pending[room.entityId] !== value)
+      this._pending = { ...this._pending, [room.entityId]: value };
+  }
+
+  private _onDialDown(room: Room, e: PointerEvent): void {
+    if (this._drag || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (this._shownTarget(room) === null) return;
+    const svgEl = e.currentTarget as SVGSVGElement;
+    const el = e.target as Element;
+    if (!el.classList?.contains("hit")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // No programmatic focus: Chrome would draw the keyboard focus ring on touch.
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture not supported – moves still arrive while over the dial */
+    }
+    this._drag = { pointerId: e.pointerId, el, room, value: null };
+    this._dragging = true;
+    // Tapping the arc jumps there; grabbing the knob keeps the value until moved.
+    if (!el.classList.contains("knob-hit")) this._dragTo(room, this._dragValue(room, svgEl, e));
+  }
+
+  private _onDialMove(room: Room, e: PointerEvent): void {
+    if (!this._drag || e.pointerId !== this._drag.pointerId) return;
+    e.preventDefault();
+    this._drag.room = room;
+    this._dragTo(room, this._dragValue(room, e.currentTarget as SVGSVGElement, e));
+  }
+
+  private _onDialUp(e: PointerEvent): void {
+    if (!this._drag || e.pointerId !== this._drag.pointerId) return;
+    this._endDrag(true);
+  }
+
+  /** Finish a drag: release capture and (optionally) commit once. */
+  private _endDrag(commit: boolean): void {
+    const d = this._drag;
+    if (!d) return;
+    this._drag = null;
+    this._dragging = false;
+    try {
+      if (d.el.hasPointerCapture?.(d.pointerId)) d.el.releasePointerCapture(d.pointerId);
+    } catch {
+      /* element already gone */
+    }
+    if (d.value === null) return;
+    if (commit && d.value !== d.room.target) {
+      this._schedule(d.room, d.value, 0);
+    } else {
+      const { [d.room.entityId]: _, ...rest } = this._pending;
+      void _;
+      this._pending = rest;
+    }
+  }
+
+  private _onDialKey(room: Room, e: KeyboardEvent): void {
+    const delta = keyDelta(e.key, room.step || 0.5);
+    if (delta === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this._step(room, delta);
   }
 
   private async _commit(room: Room, value: number): Promise<void> {
@@ -401,17 +516,46 @@ export class HeizwerkCard extends LitElement {
   private _renderDial(room: Room, target: number | null, sv: StatusView): TemplateResult {
     const s = this._s;
     const fmt = this._fmt;
-    const min = this._config?.dial_min ?? 12;
-    const max = this._config?.dial_max ?? 26;
+    const [min, max] = this._dialRange();
     const fc = room.current !== null ? fraction(room.current, min, max) : null;
     const ft = target !== null ? fraction(target, min, max) : null;
     const pc = fc !== null ? dialPoint(fc) : null;
     const pt = ft !== null ? dialPoint(ft) : null;
-    const arcColor = sv.tone === "heat" ? "var(--hw-heatf)" : "var(--c)";
-    const label = `${s.actual} ${fmtTemp(room.current, fmt)}°, ${s.target} ${fmtTemp(target, fmt)}°`;
-    return html`<div class="dial">
-      <svg width="260" height="214" viewBox="0 0 260 214" role="img" aria-label=${label}>
-        ${svg`<path d=${arcPath(0, 1)} fill="none" stroke="var(--hw-track)" stroke-width="14" stroke-linecap="round" />`}
+    // While a new target is being chosen (drag / ± before commit) colour by
+    // direction: warmer than the room = heat, otherwise the manual colour.
+    const choosing = this._pending[room.entityId] !== undefined;
+    const arcColor =
+      choosing && target !== null && room.current !== null
+        ? target > room.current
+          ? "var(--hw-heatf)"
+          : "var(--hw-violet)"
+        : sv.tone === "heat"
+          ? "var(--hw-heatf)"
+          : "var(--c)";
+    const label = `${s.actual} ${fmtTemp(room.current, fmt)}°, ${s.target}`;
+    const valueText = `${s.target} ${fmtTarget(target, fmt)} °C`;
+    const track = arcPath(0, 1);
+    return html`<div class="dial ${this._dragging ? "dragging" : ""}">
+      <svg
+        width="260"
+        height="214"
+        viewBox="0 0 260 214"
+        role="slider"
+        tabindex="0"
+        aria-label=${label}
+        aria-valuemin=${room.minTemp}
+        aria-valuemax=${room.maxTemp}
+        aria-valuenow=${target ?? nothing}
+        aria-valuetext=${valueText}
+        aria-disabled=${target === null ? "true" : "false"}
+        @pointerdown=${(e: PointerEvent) => this._onDialDown(room, e)}
+        @pointermove=${(e: PointerEvent) => this._onDialMove(room, e)}
+        @pointerup=${(e: PointerEvent) => this._onDialUp(e)}
+        @pointercancel=${(e: PointerEvent) => this._onDialUp(e)}
+        @lostpointercapture=${(e: PointerEvent) => this._onDialUp(e)}
+        @keydown=${(e: KeyboardEvent) => this._onDialKey(room, e)}
+      >
+        ${svg`<path d=${track} fill="none" stroke="var(--hw-track)" stroke-width="14" stroke-linecap="round" />`}
         ${
           fc !== null && ft !== null && Math.abs(ft - fc) > 0.001
             ? svg`<path d=${arcPath(fc, ft)} fill="none" stroke=${arcColor} stroke-opacity=".45" stroke-width="14" stroke-linecap="round" />`
@@ -423,8 +567,15 @@ export class HeizwerkCard extends LitElement {
             : nothing
         }
         ${
+          target !== null
+            ? svg`<path class="hit" d=${track} fill="none" stroke="transparent" stroke-width="44" stroke-linecap="round" />`
+            : nothing
+        }
+        ${
           pt
-            ? svg`<circle cx=${pt.x} cy=${pt.y} r="11" fill=${sv.tone === "heat" ? "var(--hw-heatf)" : "var(--c)"} stroke="var(--hw-card)" stroke-width="3" />`
+            ? svg`<circle class="halo" cx=${pt.x} cy=${pt.y} r="18" fill=${arcColor} />
+              <circle class="knob" cx=${pt.x} cy=${pt.y} r="11" fill=${arcColor} stroke="var(--hw-card)" stroke-width="3" />
+              <circle class="hit knob-hit" cx=${pt.x} cy=${pt.y} r="24" fill="transparent" />`
             : nothing
         }
       </svg>

@@ -148,6 +148,56 @@ export const standardStyles = css`
     height: 214px;
     align-self: center;
   }
+  .dial svg {
+    display: block;
+    /* Only the arc/knob hit areas take pointers – the rest of the dial scrolls normally. */
+    pointer-events: none;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    border-radius: 16px;
+  }
+  .dial svg:focus {
+    outline: none;
+  }
+  .dial svg:focus-visible {
+    outline: 2px solid var(--c);
+    outline-offset: 2px;
+  }
+  .dial .hit {
+    pointer-events: all;
+    cursor: grab;
+  }
+  .dial path.hit {
+    pointer-events: stroke;
+  }
+  .dial.dragging .hit {
+    cursor: grabbing;
+  }
+  .dial .halo {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .dial .knob {
+    pointer-events: none;
+  }
+  .dial.dragging .halo {
+    opacity: 0.2;
+  }
+  .dial.dragging .knob {
+    r: 13px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .dial .knob {
+      transition: r 0.12s ease-out;
+    }
+    .dial .halo {
+      transition: opacity 0.12s ease-out;
+    }
+  }
+  .dial .mid,
+  .dial .end {
+    pointer-events: none;
+  }
   .dial .mid {
     position: absolute;
     inset: 0;

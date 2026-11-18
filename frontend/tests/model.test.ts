@@ -7,7 +7,10 @@ import {
   fmtTarget,
   fmtTemp,
   fmtTime,
+  fractionToValue,
+  keyDelta,
   parseRoom,
+  pointToFraction,
   profileValue,
   roomNote,
   statusView,
@@ -261,5 +264,68 @@ describe("stepTarget", () => {
     expect(stepTarget(21.3, 0.5, room)).toBe(22);
     expect(stepTarget(30, 0.5, room)).toBe(30);
     expect(stepTarget(5, -0.5, room)).toBe(5);
+  });
+});
+
+describe("pointToFraction", () => {
+  it("maps the top of the dial to the middle", () => {
+    expect(pointToFraction(130, 20)).toBeCloseTo(0.5, 6);
+  });
+  it("round-trips dialPoint (18.5 °C on 12..26)", () => {
+    const f = (18.5 - 12) / 14;
+    const p = dialPoint(f);
+    expect(pointToFraction(p.x, p.y)).toBeCloseTo(f, 3);
+  });
+  it("maps the arc ends and is independent of the radius", () => {
+    const a = dialPoint(0);
+    const b = dialPoint(1);
+    expect(pointToFraction(a.x, a.y)).toBeCloseTo(0, 3);
+    expect(pointToFraction(b.x, b.y)).toBeCloseTo(1, 3);
+    // Same angle, much closer to the centre.
+    expect(pointToFraction(130 - 10, 112.05 + 10)).toBeCloseTo(0, 6);
+    // Left (9 o'clock) = 1/6, right (3 o'clock) = 5/6.
+    expect(pointToFraction(20, 112.05)).toBeCloseTo(45 / 270, 6);
+    expect(pointToFraction(240, 112.05)).toBeCloseTo(225 / 270, 6);
+  });
+  it("snaps points in the bottom gap to the nearer end", () => {
+    // Left half of the gap → start, right half → end.
+    expect(pointToFraction(110, 200)).toBe(0);
+    expect(pointToFraction(80, 190)).toBe(0);
+    expect(pointToFraction(150, 200)).toBe(1);
+    expect(pointToFraction(180, 190)).toBe(1);
+  });
+});
+
+describe("fractionToValue", () => {
+  const room = parseRoom(entity({}));
+  it("rounds to the step", () => {
+    expect(fractionToValue(0, 12, 26, 0.5, room)).toBe(12);
+    expect(fractionToValue(1, 12, 26, 0.5, room)).toBe(26);
+    expect(fractionToValue(0.5, 12, 26, 0.5, room)).toBe(19);
+    expect(fractionToValue((18.6 - 12) / 14, 12, 26, 0.5, room)).toBe(18.5);
+    expect(fractionToValue((18.8 - 12) / 14, 12, 26, 0.5, room)).toBe(19);
+    expect(fractionToValue((21.3 - 12) / 14, 12, 26, 1, room)).toBe(21);
+  });
+  it("clamps to the room limits and the dial range", () => {
+    const narrow = parseRoom(entity({ min_temp: 15, max_temp: 24 }));
+    expect(fractionToValue(0, 12, 26, 0.5, narrow)).toBe(15);
+    expect(fractionToValue(1, 12, 26, 0.5, narrow)).toBe(24);
+    expect(fractionToValue(-0.5, 12, 26, 0.5, room)).toBe(12);
+    expect(fractionToValue(1.5, 12, 26, 0.5, room)).toBe(26);
+  });
+  it("falls back to 0.5 for a zero step", () => {
+    expect(fractionToValue((20.3 - 12) / 14, 12, 26, 0, room)).toBe(20.5);
+  });
+});
+
+describe("keyDelta", () => {
+  it("maps arrows and page keys", () => {
+    expect(keyDelta("ArrowUp", 0.5)).toBe(0.5);
+    expect(keyDelta("ArrowRight", 0.5)).toBe(0.5);
+    expect(keyDelta("ArrowDown", 0.5)).toBe(-0.5);
+    expect(keyDelta("ArrowLeft", 0.5)).toBe(-0.5);
+    expect(keyDelta("PageUp", 0.5)).toBe(1);
+    expect(keyDelta("PageDown", 0.5)).toBe(-1);
+    expect(keyDelta("Enter", 0.5)).toBeNull();
   });
 });
