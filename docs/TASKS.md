@@ -78,6 +78,32 @@ Künftige Wünsche wieder hier sammeln und erst nach „go“ umsetzen.
 - [x] Karte: Fortsetzen/Dauer nur mit Fortsetzen-Aktion
 - [x] Tests + Dev-Test gegen echtes Zeitwerk (Fall Steven: Plan 16 °C, manuell, Fortsetzen → Planwert)
 
+## Backlog – wartet auf „go“ von Steven (Stand 2026-11-18)
+Ziel: die Heizungs-Automationen (`claude_Heizungssteuerung_*`,
+`claude_Thermostat_Raumtemperatur`) langfristig deaktivieren können.
+
+- [ ] **B5 Raumtemperatur an die Thermostate senden** – ein Schalter statt des Felds
+      „Externe Temperatureingänge“. Heizwerk findet den Eingang
+      `number.…_external_temperature_input` am selben Gerät wie jeden TRV des Raums
+      selbst und schickt den Wert des Raumfühlers (≥ 0,1 K Änderung, sonst alle 30 min).
+      Bestehende Einträge im alten Feld werden übernommen.
+- [ ] **B6 Regelart „Zweipunkt“** (Option, Standard bleibt „Sollwert“ = TRVZB regelt
+      selbst nach dem externen Wert): Hysterese negativ/positiv (Standard −0,5 / +0 K),
+      Heizwert am TRV (Standard 24 °C), TRV nur heizen/aus – wie Blueprint
+      `claude_Heizungssteuerung_V2`.
+- [ ] **B7 Außentemperatur-Grenze pro Raum** (optional, überschreibt den Hauswert).
+- [ ] **B8 Hinweis Messquelle** – Reparaturhinweis, wenn die Messquellen-Auswahl eines
+      TRV länger als 5 min nicht auf `remote_temperature` steht (nicht verfügbar /
+      unbekannt zählen nicht). Heizwerk stellt nicht selbst um.
+- [ ] **B9 Drehen am Thermostat erkennen** – als manuelle Übersteuerung übernehmen
+      (Standard) oder zurücksetzen (Raum-Option); Echo eigener Befehle ausfiltern.
+- [ ] **B10 Wandfeuchte**: Feld Wandtemperatur nur für Temperatursensoren (°C);
+      neues Feld „Schimmel-Indikator (Wandfeuchte in %)“ übernimmt z. B.
+      `sensor.claude_schimmel_<raum>` direkt (inkl. kritischer Wandtemperatur).
+
+Danach Umstieg je Raum: Heizwerk-Raum mit gleichen Werten in „Nur beobachten“,
+vergleichen, dann mit Freigabe Automation deaktivieren (nicht löschen).
+
 ## Offen / später
 - [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bewusst nicht in 0.1
 - [ ] Brand-Icons (`custom_components/heizwerk/brand/`)
