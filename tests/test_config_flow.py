@@ -32,7 +32,7 @@ from custom_components.heizwerk.config_flow import (
 )
 from custom_components.heizwerk.const import DOMAIN, SUBENTRY_ROOM
 
-from .conftest import room_data
+from .conftest import WALL, room_data
 
 CLIMATE = "climate.heizwerk_bad"
 RESUME = [
@@ -43,6 +43,25 @@ RESUME = [
 ]
 
 TRANSLATIONS = Path(__file__).parents[1] / "custom_components/heizwerk/translations"
+
+
+# Defaults of the fields added in 0.5 (stored even while hidden).
+NEW_DEFAULTS: dict[str, Any] = {
+    "send_temperature": True,
+    "hysteresis_low": 0.5,
+    "hysteresis_high": 0.0,
+    "heat_setpoint": 24.0,
+    "trv_manual": "adopt",
+}
+LEGACY_INPUTS = ["number.trv_bad_external_temperature_input"]
+
+
+@pytest.fixture
+def house(house: None, hass: HomeAssistant) -> None:
+    """Test house with a wall sensor that reports °C (checked by the form)."""
+    hass.states.async_set(
+        WALL, "15.6", {"unit_of_measurement": "°C", "device_class": "temperature"}
+    )
 
 
 def flat_room(**overrides: Any) -> dict[str, Any]:
@@ -192,7 +211,7 @@ async def test_room_subentry_create_and_reconfigure(hass: HomeAssistant, house) 
     subentry_id = next(iter(entry.subentries))
     stored = dict(entry.subentries[subentry_id].data)
     # Stored flat, same keys as before sections existed.
-    assert stored == flat_room(observe_only=True)
+    assert stored == {**NEW_DEFAULTS, **flat_room(observe_only=True)}
 
     # Duplicate name rejected
     result = await _add_room(hass, entry, data)
@@ -258,7 +277,12 @@ async def test_reconfigure_shows_stored_values_in_sections(
     await hass.async_block_till_done()
     stored = dict(entry.subentries[subentry_id].data)
     assert "target_entity" not in stored
-    assert stored == _without(legacy, "target_entity")
+    # 0.2 room without external inputs: sending stays off.
+    assert stored == {
+        **NEW_DEFAULTS,
+        **_without(legacy, "target_entity"),
+        "send_temperature": False,
+    }
 
 
 async def test_legacy_target_entity_dropped(hass: HomeAssistant, house) -> None:
@@ -360,25 +384,295 @@ async def test_room_validation(hass: HomeAssistant, house) -> None:
     assert result["errors"] == {"limits": "min_max"}
 
 
-async def test_offset_with_external_input_rejected(hass: HomeAssistant, house) -> None:
+async def test_offset_with_send_temperature_rejected(
+    hass: HomeAssistant, house
+) -> None:
     entry = await _hub_entry(hass)
     data = nested_room(observe_only=True)
-    data["regulation"] = {
-        "correction": 0.0,
-        "regulation": "offset",
-        "external_temperature_entities": ["number.trv_bad_external_temperature"],
-    }
+    data["regulation"] = {"regulation": "offset", "send_temperature": True}
     result = await _add_room(hass, entry, data)
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"regulation": "offset_with_external"}
     # The submitted values are kept in the re-shown form.
     assert _suggested(result["data_schema"])["regulation"]["regulation"] == "offset"
 
-    data["regulation"]["regulation"] = "setpoint"
+    data["regulation"]["send_temperature"] = False
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], data
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["regulation"] == "offset"
+    assert result["data"]["send_temperature"] is False
+
+
+async def test_send_temperature_defaults_on(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["regulation"] = {}
+    result = await _add_room(hass, entry, data)
+    assert result["data"]["send_temperature"] is True
+    assert result["data"]["regulation"] == "setpoint"
+    assert result["data"]["trv_manual"] == "adopt"
+    assert "external_temperature_entities" not in result["data"]
+
+
+async def test_two_point_fields(hass: HomeAssistant, house) -> None:
+    """Hysteresis / heat set-point only count with two-point regulation."""
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    # Hidden (set-point regulation): submitted values are ignored.
+    data["regulation"] = {
+        "regulation": "setpoint",
+        "hysteresis_low": 1.0,
+        "heat_setpoint": 30.0,
+    }
+    result = await _add_room(hass, entry, data)
+    assert result["data"]["hysteresis_low"] == 0.5
+    assert result["data"]["heat_setpoint"] == 24.0
+    await hass.async_block_till_done()
+
+    subentry_id = next(iter(entry.subentries))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data["regulation"] = {
+        "regulation": "two_point",
+        "hysteresis_low": 0.3,
+        "hysteresis_high": 0.2,
+        "heat_setpoint": 26.0,
+        "trv_manual": "reset",
+    }
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    stored = entry.subentries[subentry_id].data
+    assert stored["regulation"] == "two_point"
+    assert stored["hysteresis_low"] == 0.3
+    assert stored["hysteresis_high"] == 0.2
+    assert stored["heat_setpoint"] == 26.0
+    assert stored["trv_manual"] == "reset"
+
+    # Back to set-point: the two-point values are kept (hidden, not lost).
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data["regulation"] = {"regulation": "setpoint"}
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    await hass.async_block_till_done()
+    assert entry.subentries[subentry_id].data["hysteresis_low"] == 0.3
+    assert entry.subentries[subentry_id].data["heat_setpoint"] == 26.0
+
+
+async def test_legacy_external_inputs_preserved(hass: HomeAssistant, house) -> None:
+    """0.4 rooms with explicit inputs keep them; send_temperature suggested on."""
+    legacy = flat_room(observe_only=True, external_temperature_entities=LEGACY_INPUTS)
+    entry = await _hub_entry(
+        hass,
+        subentries_data=[
+            ConfigSubentryData(
+                data=legacy, subentry_type=SUBENTRY_ROOM, title="Bad", unique_id=None
+            )
+        ],
+    )
+    subentry_id = next(iter(entry.subentries))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    suggested = _suggested(result["data_schema"])
+    assert suggested["regulation"]["send_temperature"] is True
+    assert "external_temperature_entities" not in suggested["regulation"]
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], nested_room(observe_only=True)
+    )
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    stored = entry.subentries[subentry_id].data
+    assert stored["external_temperature_entities"] == LEGACY_INPUTS
+    assert stored["send_temperature"] is True
+
+
+@pytest.mark.parametrize(
+    ("stored_extra", "expected"),
+    [({}, False), ({"external_temperature_entities": LEGACY_INPUTS}, True)],
+    ids=["no_inputs", "with_inputs"],
+)
+async def test_legacy_send_temperature_default(
+    hass: HomeAssistant, house, stored_extra: dict, expected: bool
+) -> None:
+    """A room without stored send_temperature: on only with legacy inputs."""
+    legacy = flat_room(observe_only=True, **stored_extra)
+    assert "send_temperature" not in legacy
+    entry = await _hub_entry(
+        hass,
+        subentries_data=[
+            ConfigSubentryData(
+                data=legacy, subentry_type=SUBENTRY_ROOM, title="Bad", unique_id=None
+            )
+        ],
+    )
+    subentry_id = next(iter(entry.subentries))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    suggested = _suggested(result["data_schema"])
+    assert suggested["regulation"]["send_temperature"] is expected
+    # Unrelated edit by a client that omits the field: unchanged.
+    data = nested_room(observe_only=True, correction=-1.0)
+    data["regulation"].pop("send_temperature", None)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    assert entry.subentries[subentry_id].data["send_temperature"] is expected
+
+
+async def test_new_room_suggests_send_temperature(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ROOM), context={"source": config_entries.SOURCE_USER}
+    )
+    assert _suggested(result["data_schema"])["regulation"] == {"send_temperature": True}
+
+
+async def test_legacy_inputs_dropped_when_sending_off(
+    hass: HomeAssistant, house
+) -> None:
+    legacy = flat_room(observe_only=True, external_temperature_entities=LEGACY_INPUTS)
+    entry = await _hub_entry(
+        hass,
+        subentries_data=[
+            ConfigSubentryData(
+                data=legacy, subentry_type=SUBENTRY_ROOM, title="Bad", unique_id=None
+            )
+        ],
+    )
+    subentry_id = next(iter(entry.subentries))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data = nested_room(observe_only=True)
+    data["regulation"]["send_temperature"] = False
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    stored = entry.subentries[subentry_id].data
+    assert stored["send_temperature"] is False
+    assert "external_temperature_entities" not in stored
+
+
+async def test_two_point_needs_room_sensor(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    data = _nest(
+        _without(flat_room(observe_only=True), "temperature_sensor"), ROOM_SECTIONS
+    )
+    data["regulation"] = {"regulation": "two_point"}
+    result = await _add_room(hass, entry, data)
+    assert result["errors"] == {"regulation": "two_point_needs_sensor"}
+
+
+async def test_two_point_hysteresis_too_small(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["regulation"] = {
+        "regulation": "two_point",
+        "hysteresis_low": 0.1,
+        "hysteresis_high": 0.0,
+    }
+    result = await _add_room(hass, entry, data)
+    assert result["errors"] == {"regulation": "hysteresis_too_small"}
+    data["regulation"]["hysteresis_high"] = 0.1
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_wall_sensor_selector_unfiltered(hass: HomeAssistant) -> None:
+    """Wall sensor: any sensor / input_number / number; the unit is checked."""
+    climate = _fields(_room_schema(hass))["room_climate"]
+    wall = climate["wall_temperature_sensor"].serialize()["selector"]["entity"]
+    assert "device_class" not in wall
+    assert set(wall["domain"]) == {"sensor", "input_number", "number"}
+    mold = climate["mold_sensor"].serialize()["selector"]["entity"]
+    assert mold["device_class"] == ["humidity"]
+
+
+async def test_outdoor_limit_optional(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    result = await _add_room(hass, entry, nested_room(observe_only=True))
+    assert "outdoor_limit" not in result["data"]
+    await hass.async_block_till_done()
+    subentry_id = next(iter(entry.subentries))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data = nested_room(observe_only=True)
+    data["windows_locks"]["outdoor_limit"] = 14.5
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    await hass.async_block_till_done()
+    assert entry.subentries[subentry_id].data["outdoor_limit"] == 14.5
+
+    # 0 = no summer lock for this room (kept, not treated as empty).
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data["windows_locks"]["outdoor_limit"] = 0
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    await hass.async_block_till_done()
+    assert entry.subentries[subentry_id].data["outdoor_limit"] == 0
+
+
+async def test_wall_sensor_must_be_temperature(hass: HomeAssistant, house) -> None:
+    hass.states.async_set("sensor.schimmel_bad", "71", {"unit_of_measurement": "%"})
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["room_climate"]["wall_temperature_sensor"] = "sensor.schimmel_bad"
+    result = await _add_room(hass, entry, data)
+    assert result["errors"] == {"room_climate": "not_temperature"}
+    data["room_climate"]["wall_temperature_sensor"] = WALL
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_mold_sensor_hides_wall_sensor(hass: HomeAssistant, house) -> None:
+    hass.states.async_set("sensor.schimmel_bad", "71", {"unit_of_measurement": "%"})
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["room_climate"]["mold_sensor"] = "sensor.schimmel_bad"
+    # Hidden: even a non-temperature value is ignored, no error.
+    data["room_climate"]["wall_temperature_sensor"] = "sensor.schimmel_bad"
+    result = await _add_room(hass, entry, data)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["mold_sensor"] == "sensor.schimmel_bad"
+    assert "wall_temperature_sensor" not in result["data"]
+
+
+async def test_mold_sensor_keeps_stored_wall_sensor(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    await _add_room(hass, entry, nested_room(observe_only=True))
+    await hass.async_block_till_done()
+    subentry_id = next(iter(entry.subentries))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data = nested_room(observe_only=True)
+    data["room_climate"] = {"mold_sensor": "sensor.schimmel_bad"}
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    await hass.async_block_till_done()
+    stored = entry.subentries[subentry_id].data
+    assert stored["mold_sensor"] == "sensor.schimmel_bad"
+    assert stored["wall_temperature_sensor"] == WALL  # hidden, kept
+
+    # Visible again and cleared by the user: removed.
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data["room_climate"] = {}
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    await hass.async_block_till_done()
+    stored = entry.subentries[subentry_id].data
+    assert "wall_temperature_sensor" not in stored
+    assert "mold_sensor" not in stored
 
 
 # --- Zeitwerk plan detection ---------------------------------------------------
@@ -583,6 +877,17 @@ async def test_every_field_is_explained(hass: HomeAssistant, lang: str) -> None:
         assert set(step.get("sections", {})) == set(_fields(schema)) - {None}
     errors = strings["config_subentries"]["room"]["error"]
     assert errors["offset_with_external"]
+    assert errors["not_temperature"]
+    assert errors["two_point_needs_sensor"]
+    assert errors["hysteresis_too_small"]
+    assert errors["invalid_action"]
+    options = strings["selector"]
+    assert set(options["regulation"]["options"]) == {"setpoint", "offset", "two_point"}
+    assert set(options["trv_manual"]["options"]) == {"adopt", "reset"}
+    issue = strings["issues"]["sensor_select_not_remote"]
+    for placeholder in ("{trv}", "{select}", "{state}"):
+        assert placeholder in issue["title"] + issue["description"]
+    assert strings["issues"]["target_entity_removed"]["title"]
     assert "<" not in json.dumps(strings)
 
 
@@ -625,3 +930,21 @@ async def test_heizwerk_entities_rejected_and_not_offered(
         hass=hass,
     )
     assert errors["trvs"] == "heizwerk_entity"
+
+
+def test_wall_sensor_without_unit_is_accepted(hass: HomeAssistant) -> None:
+    """Re-review risk 2: old helpers without unit stay saveable; % is rejected."""
+    from custom_components.heizwerk.config_flow import validate_room
+
+    entry = MockConfigEntry(domain=DOMAIN)
+    entry.add_to_hass(hass)
+    hass.states.async_set("input_number.wall_nounit", "15")
+    hass.states.async_set("sensor.mold", "58", {"unit_of_measurement": "%"})
+    ok = validate_room(
+        entry, room_data(wall_temperature_sensor="input_number.wall_nounit"), hass=hass
+    )
+    assert "room_climate" not in ok
+    bad = validate_room(
+        entry, room_data(wall_temperature_sensor="sensor.mold"), hass=hass
+    )
+    assert bad["room_climate"] == "not_temperature"

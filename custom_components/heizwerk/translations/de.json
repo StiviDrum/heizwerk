@@ -105,7 +105,7 @@
           "sections": {
             "schedule": {
               "name": "Plan & Fortsetzen",
-              "description": "Dein Zeitplan (Zeitwerk, Scheduler, Automation) setzt den Raum per climate.set_temperature. Hier: Planansicht und was „Fortsetzen“ tut. Fortsetzen: leer = zeitwerk.resume für den erkannten Plan, ohne Plan wird Fortsetzen ausgeblendet; für Scheduler z. B. scheduler.run_action mit dem Zeitplan-Schalter.",
+              "description": "Dein Zeitplan (Zeitwerk, Scheduler, Automation) setzt den Raum per climate.set_temperature. Hier: Planansicht und was „Fortsetzen“ tut.",
               "data": {
                 "zeitwerk_plan": "Zeitwerk-Plan",
                 "resume_action": "Aktion bei „Fortsetzen“"
@@ -117,28 +117,31 @@
             },
             "room_climate": {
               "name": "Raumklima",
-              "description": "Feuchte, Wandtemperatur und Lüftungsempfehlung.",
+              "description": "Feuchte, Wandfeuchte (Schimmelrisiko) und Lüftungsempfehlung.",
               "data": {
                 "humidity_sensor": "Feuchtesensor",
+                "mold_sensor": "Schimmel-Indikator (Wandfeuchte in %)",
                 "wall_temperature_sensor": "Wandtemperatur-Sensor",
                 "humidity_threshold": "Lüften empfohlen ab"
               },
               "data_description": {
                 "humidity_sensor": "Raumfeuchte für Taupunkt und Lüftungsempfehlung. Optional.",
-                "wall_temperature_sensor": "Kälteste Wandoberfläche; ergibt die Wandfeuchte (Schimmelrisiko). Optional.",
+                "mold_sensor": "z. B. sensor.claude_schimmel_bad aus dem HA-Schimmelindikator; der Wert gilt direkt als Wandfeuchte. Optional.",
+                "wall_temperature_sensor": "Temperatursensor (°C/°F) an der kältesten Wandstelle; ergibt die Wandfeuchte (Schimmelrisiko). Ausgeblendet, wenn ein Schimmel-Indikator gesetzt ist. Optional.",
                 "humidity_threshold": "Ab dieser Raumfeuchte wird Lüften empfohlen. Standard 60 %; Bad 65–70 %."
               }
             },
             "windows_locks": {
               "name": "Fenster & Sperren",
-              "description": "Fensterkontakte, weitere Sperren und was bei gesperrter Heizung passiert.",
+              "description": "Fensterkontakte, weitere Sperren, Sommerabschaltung des Raums und was bei gesperrter Heizung passiert.",
               "data": {
                 "windows": "Fensterkontakte",
                 "window_open_delay": "Fenster offen: sperren nach",
                 "window_close_delay": "Fenster zu: freigeben nach",
                 "lock_entities": "Weitere Sperren",
                 "lock_mode": "Bei Sperre",
-                "frost_temperature": "Frostschutztemperatur"
+                "frost_temperature": "Frostschutztemperatur",
+                "outdoor_limit": "Sommerabschaltung ab (dieser Raum)"
               },
               "data_description": {
                 "windows": "Solange ein Fenster offen ist, ist die Heizung gesperrt. Optional.",
@@ -146,21 +149,30 @@
                 "window_close_delay": "Verzögerung, bis nach dem Schließen wieder geheizt wird. Standard 10 s.",
                 "lock_entities": "Solange eine davon an ist, ist die Heizung gesperrt, z. B. ein Wartungsschalter. Nicht für Urlaub oder Abwesenheit, das macht Zeitwerk.",
                 "lock_mode": "Aus verlässt sich auf den Frostschutz im Thermostat (passt für Sonoff TRVZB). Standard aus.",
-                "frost_temperature": "Sollwert während der Sperre im Frostschutz-Modus. Standard 7 °C."
+                "frost_temperature": "Sollwert während der Sperre im Frostschutz-Modus. Standard 7 °C.",
+                "outdoor_limit": "Außentemperatur, ab der dieser Raum gesperrt wird. Leer = Hauswert aus den Heizwerk-Optionen; 0 = für diesen Raum keine Sommerabschaltung."
               }
             },
             "regulation": {
               "name": "Regelung (erweitert)",
-              "description": "Wie der Sollwert an die Thermostate geht. Entweder externer Temperatureingang oder Offset, nie beides.",
+              "description": "Wie Sollwert und Raumtemperatur an die Thermostate gehen. Entweder Raumtemperatur senden oder Offset, nie beides.",
               "data": {
-                "correction": "Korrektur",
                 "regulation": "Regelung",
-                "external_temperature_entities": "Externe Temperatureingänge der Thermostate"
+                "send_temperature": "Raumtemperatur an Thermostate senden",
+                "correction": "Korrektur",
+                "hysteresis_low": "Hysterese unten",
+                "hysteresis_high": "Hysterese oben",
+                "heat_setpoint": "Thermostat-Sollwert beim Heizen",
+                "trv_manual": "Drehen am Thermostat"
               },
               "data_description": {
-                "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K. Standard 0; mit externem Temperatureingang 0 lassen.",
-                "regulation": "Sollwert sendet Ziel plus Korrektur (empfohlen). Offset addiert zusätzlich Thermostat-Ist minus Raumfühler; nur für Thermostate ohne externen Eingang.",
-                "external_temperature_entities": "z. B. number.…_external_temperature_input. Für Sonoff TRVZB bevorzugt: in Z2M temperature_sensor_select auf external, Regelung Sollwert, Korrektur 0."
+                "regulation": "Sollwert: das Thermostat regelt selbst (empfohlen). Offset: addiert Thermostat-Ist minus Raumfühler, nur ohne Senden der Raumtemperatur. Zweipunkt: Ventil auf/zu nach Hysterese.",
+                "send_temperature": "Heizwerk findet den externen Temperatureingang (number.…_external_temperature_input) jedes Thermostats selbst und sendet den Wert des Raumfühlers (nur mit Raumfühler). Sonoff TRVZB: Messquelle remote_temperature in Zigbee2MQTT. Standard an.",
+                "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K. Standard 0; beim Senden der Raumtemperatur 0 lassen.",
+                "hysteresis_low": "Heizen, wenn der Raum so weit unter dem Ziel liegt. Standard 0,5 K.",
+                "hysteresis_high": "Heizen beenden, wenn der Raum Ziel plus diesen Wert erreicht. Standard 0 K.",
+                "heat_setpoint": "Wird beim Heizen ans Thermostat gesendet, damit das Ventil ganz öffnet. Standard 24 °C.",
+                "trv_manual": "Übernehmen: eine Änderung am Thermostat ist eine manuelle Übersteuerung wie über die Karte (Standard). Zurücksetzen: Heizwerk stellt seinen Wert wieder ein."
               }
             },
             "limits": {
@@ -196,7 +208,7 @@
           "sections": {
             "schedule": {
               "name": "Plan & Fortsetzen",
-              "description": "Dein Zeitplan (Zeitwerk, Scheduler, Automation) setzt den Raum per climate.set_temperature. Hier: Planansicht und was „Fortsetzen“ tut. Fortsetzen: leer = zeitwerk.resume für den erkannten Plan, ohne Plan wird Fortsetzen ausgeblendet; für Scheduler z. B. scheduler.run_action mit dem Zeitplan-Schalter.",
+              "description": "Dein Zeitplan (Zeitwerk, Scheduler, Automation) setzt den Raum per climate.set_temperature. Hier: Planansicht und was „Fortsetzen“ tut.",
               "data": {
                 "zeitwerk_plan": "Zeitwerk-Plan",
                 "resume_action": "Aktion bei „Fortsetzen“"
@@ -208,28 +220,31 @@
             },
             "room_climate": {
               "name": "Raumklima",
-              "description": "Feuchte, Wandtemperatur und Lüftungsempfehlung.",
+              "description": "Feuchte, Wandfeuchte (Schimmelrisiko) und Lüftungsempfehlung.",
               "data": {
                 "humidity_sensor": "Feuchtesensor",
+                "mold_sensor": "Schimmel-Indikator (Wandfeuchte in %)",
                 "wall_temperature_sensor": "Wandtemperatur-Sensor",
                 "humidity_threshold": "Lüften empfohlen ab"
               },
               "data_description": {
                 "humidity_sensor": "Raumfeuchte für Taupunkt und Lüftungsempfehlung. Optional.",
-                "wall_temperature_sensor": "Kälteste Wandoberfläche; ergibt die Wandfeuchte (Schimmelrisiko). Optional.",
+                "mold_sensor": "z. B. sensor.claude_schimmel_bad aus dem HA-Schimmelindikator; der Wert gilt direkt als Wandfeuchte. Optional.",
+                "wall_temperature_sensor": "Temperatursensor (°C/°F) an der kältesten Wandstelle; ergibt die Wandfeuchte (Schimmelrisiko). Ausgeblendet, wenn ein Schimmel-Indikator gesetzt ist. Optional.",
                 "humidity_threshold": "Ab dieser Raumfeuchte wird Lüften empfohlen. Standard 60 %; Bad 65–70 %."
               }
             },
             "windows_locks": {
               "name": "Fenster & Sperren",
-              "description": "Fensterkontakte, weitere Sperren und was bei gesperrter Heizung passiert.",
+              "description": "Fensterkontakte, weitere Sperren, Sommerabschaltung des Raums und was bei gesperrter Heizung passiert.",
               "data": {
                 "windows": "Fensterkontakte",
                 "window_open_delay": "Fenster offen: sperren nach",
                 "window_close_delay": "Fenster zu: freigeben nach",
                 "lock_entities": "Weitere Sperren",
                 "lock_mode": "Bei Sperre",
-                "frost_temperature": "Frostschutztemperatur"
+                "frost_temperature": "Frostschutztemperatur",
+                "outdoor_limit": "Sommerabschaltung ab (dieser Raum)"
               },
               "data_description": {
                 "windows": "Solange ein Fenster offen ist, ist die Heizung gesperrt. Optional.",
@@ -237,21 +252,30 @@
                 "window_close_delay": "Verzögerung, bis nach dem Schließen wieder geheizt wird. Standard 10 s.",
                 "lock_entities": "Solange eine davon an ist, ist die Heizung gesperrt, z. B. ein Wartungsschalter. Nicht für Urlaub oder Abwesenheit, das macht Zeitwerk.",
                 "lock_mode": "Aus verlässt sich auf den Frostschutz im Thermostat (passt für Sonoff TRVZB). Standard aus.",
-                "frost_temperature": "Sollwert während der Sperre im Frostschutz-Modus. Standard 7 °C."
+                "frost_temperature": "Sollwert während der Sperre im Frostschutz-Modus. Standard 7 °C.",
+                "outdoor_limit": "Außentemperatur, ab der dieser Raum gesperrt wird. Leer = Hauswert aus den Heizwerk-Optionen; 0 = für diesen Raum keine Sommerabschaltung."
               }
             },
             "regulation": {
               "name": "Regelung (erweitert)",
-              "description": "Wie der Sollwert an die Thermostate geht. Entweder externer Temperatureingang oder Offset, nie beides.",
+              "description": "Wie Sollwert und Raumtemperatur an die Thermostate gehen. Entweder Raumtemperatur senden oder Offset, nie beides.",
               "data": {
-                "correction": "Korrektur",
                 "regulation": "Regelung",
-                "external_temperature_entities": "Externe Temperatureingänge der Thermostate"
+                "send_temperature": "Raumtemperatur an Thermostate senden",
+                "correction": "Korrektur",
+                "hysteresis_low": "Hysterese unten",
+                "hysteresis_high": "Hysterese oben",
+                "heat_setpoint": "Thermostat-Sollwert beim Heizen",
+                "trv_manual": "Drehen am Thermostat"
               },
               "data_description": {
-                "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K. Standard 0; mit externem Temperatureingang 0 lassen.",
-                "regulation": "Sollwert sendet Ziel plus Korrektur (empfohlen). Offset addiert zusätzlich Thermostat-Ist minus Raumfühler; nur für Thermostate ohne externen Eingang.",
-                "external_temperature_entities": "z. B. number.…_external_temperature_input. Für Sonoff TRVZB bevorzugt: in Z2M temperature_sensor_select auf external, Regelung Sollwert, Korrektur 0."
+                "regulation": "Sollwert: das Thermostat regelt selbst (empfohlen). Offset: addiert Thermostat-Ist minus Raumfühler, nur ohne Senden der Raumtemperatur. Zweipunkt: Ventil auf/zu nach Hysterese.",
+                "send_temperature": "Heizwerk findet den externen Temperatureingang (number.…_external_temperature_input) jedes Thermostats selbst und sendet den Wert des Raumfühlers (nur mit Raumfühler). Sonoff TRVZB: Messquelle remote_temperature in Zigbee2MQTT. Standard an.",
+                "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K. Standard 0; beim Senden der Raumtemperatur 0 lassen.",
+                "hysteresis_low": "Heizen, wenn der Raum so weit unter dem Ziel liegt. Standard 0,5 K.",
+                "hysteresis_high": "Heizen beenden, wenn der Raum Ziel plus diesen Wert erreicht. Standard 0 K.",
+                "heat_setpoint": "Wird beim Heizen ans Thermostat gesendet, damit das Ventil ganz öffnet. Standard 24 °C.",
+                "trv_manual": "Übernehmen: eine Änderung am Thermostat ist eine manuelle Übersteuerung wie über die Karte (Standard). Zurücksetzen: Heizwerk stellt seinen Wert wieder ein."
               }
             },
             "limits": {
@@ -276,9 +300,12 @@
         "name_exists": "Ein Raum mit diesem Namen existiert bereits.",
         "no_trvs": "Mindestens ein Thermostat auswählen.",
         "min_max": "Maximum muss über dem Minimum liegen.",
-        "offset_with_external": "Offset-Regelung und externer Temperatureingang gleichen doppelt aus. Mit externem Eingang Regelung „Sollwert“ wählen.",
+        "offset_with_external": "Offset-Regelung und Senden der Raumtemperatur gleichen doppelt aus. Regelung „Sollwert“ wählen oder das Senden der Raumtemperatur abschalten.",
         "heizwerk_entity": "Heizwerk-Entitäten sind hier nicht erlaubt (Heizwerk würde sich selbst steuern).",
-        "invalid_action": "Die Aktion bei „Fortsetzen“ ist ungültig. Bitte die Aktionskonfiguration prüfen."
+        "invalid_action": "Die Aktion bei „Fortsetzen“ ist ungültig. Bitte die Aktionskonfiguration prüfen.",
+        "not_temperature": "Der Wandtemperatur-Sensor muss °C oder °F messen. Für einen Schimmel-Indikator (%) das Feld Schimmel-Indikator nutzen.",
+        "two_point_needs_sensor": "Zweipunkt-Regelung braucht einen Raumfühler; die Eigenmessung des Thermostats am Heizkörper würde zu früh abschalten.",
+        "hysteresis_too_small": "Zweipunkt-Regelung: Hysterese unten plus oben muss mindestens 0,2 K betragen, sonst schaltet das Ventil ständig."
       },
       "abort": {
         "reconfigure_successful": "Raum gespeichert."
@@ -295,7 +322,14 @@
     "regulation": {
       "options": {
         "setpoint": "Sollwert (+ Korrektur)",
-        "offset": "Offset zum Raumfühler"
+        "offset": "Offset zum Raumfühler",
+        "two_point": "Zweipunkt (Ventil auf/zu, wie bisherige Automation)"
+      }
+    },
+    "trv_manual": {
+      "options": {
+        "adopt": "Als manuelle Übersteuerung übernehmen",
+        "reset": "Auf den Heizwerk-Wert zurücksetzen"
       }
     }
   },
@@ -388,6 +422,10 @@
     "target_entity_removed": {
       "title": "Heizwerk: Zeitwerk-Ziel im Raum {room} wird nicht mehr genutzt",
       "description": "Seit Heizwerk 0.4 schreibt der Zeitplan direkt auf die Raum-Entität. Das eingetragene Zeitwerk-Ziel `{entity}` wird ignoriert.\n\nSo stellst du um:\n1. Im Zeitwerk-Plan des Raums die Profil-Aktionen auf `climate.set_temperature` mit Ziel `{climate}` ändern.\n2. Den Raum in der Heizwerk-Integration einmal öffnen und speichern – dann verschwindet dieser Hinweis."
+    },
+    "sensor_select_not_remote": {
+      "title": "Heizwerk: Thermostat {trv} misst nicht mit dem Raumfühler",
+      "description": "Die Messquelle {select} steht auf „{state}“ statt auf remote_temperature. Bitte in Zigbee2MQTT oder HA zurückstellen (select.select_option mit remote_temperature). Heizwerk stellt sie nicht selbst um."
     }
   }
 }

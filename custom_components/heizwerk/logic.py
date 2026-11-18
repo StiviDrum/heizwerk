@@ -16,6 +16,7 @@ from .const import (
     LOCK_MODE_FROST,
     OFFSET_LIMIT,
     REGULATION_OFFSET,
+    REGULATION_TWO_POINT,
     STATUS_HEATING,
     STATUS_LOCKED,
     STATUS_MANUAL,
@@ -149,6 +150,11 @@ class RoomInputs:
     regulation: str = "setpoint"
     lock_mode: str = "off"
     frost_temperature: float = 7.0
+    # Two-point regulation (valve fully open at heat_setpoint, or off).
+    hysteresis_low: float = 0.5
+    hysteresis_high: float = 0.0
+    heat_setpoint: float = 24.0
+    two_point_on: bool = False
 
 
 @dataclass(slots=True)
@@ -178,6 +184,7 @@ class Decision:
     target: float
     heating: bool
     commands: list[Command]
+    two_point_on: bool = False
 
 
 def round_to_step(value: float, step: float) -> float:
@@ -254,10 +261,37 @@ def decide(inputs: RoomInputs) -> Decision:
     if locked is not None:
         return Decision(locked, inputs.target, False, lock_commands())
 
+    current = inputs.room_temperature
+    if inputs.regulation == REGULATION_TWO_POINT and current is not None:
+        on = two_point_state(
+            current,
+            inputs.target,
+            inputs.hysteresis_low,
+            inputs.hysteresis_high,
+            inputs.two_point_on,
+        )
+        commands = [
+            Command(
+                t.entity_id,
+                heat_mode(t),
+                _clamp(
+                    round_to_step(inputs.heat_setpoint, t.step), t.min_temp, t.max_temp
+                ),
+            )
+            if on
+            else Command(t.entity_id, HVAC_OFF)
+            for t in reachable
+        ]
+        status = (
+            STATUS_MANUAL
+            if inputs.manual
+            else (STATUS_HEATING if on else STATUS_REACHED)
+        )
+        return Decision(status, inputs.target, on, commands, two_point_on=on)
+
     commands = [
         Command(t.entity_id, heat_mode(t), trv_setpoint(inputs, t)) for t in reachable
     ]
-    current = inputs.room_temperature
     heating = any(t.hvac_action == "heating" for t in reachable) or (
         current is not None and current < inputs.target - HEATING_HYSTERESIS
     )
@@ -266,6 +300,39 @@ def decide(inputs: RoomInputs) -> Decision:
     else:
         status = STATUS_HEATING if heating else STATUS_REACHED
     return Decision(status, inputs.target, heating, commands)
+
+
+def two_point_state(
+    current: float, target: float, low: float, high: float, was_on: bool
+) -> bool:
+    """Hysteresis switch: on below target - low, off from target + high."""
+    if current < target - low:
+        return True
+    if current >= target + high:
+        return False
+    return was_on
+
+
+def room_target_from_trv(
+    trv_setpoint_value: float, inputs: RoomInputs, trv: TrvInfo
+) -> float:
+    """Room set-point the user meant when turning the knob on a thermostat.
+
+    Inverse of trv_setpoint(): with two-point regulation the knob value is
+    taken as room set-point directly.
+    """
+    if inputs.regulation == REGULATION_TWO_POINT:
+        return trv_setpoint_value
+    value = trv_setpoint_value - inputs.correction
+    if (
+        inputs.regulation == REGULATION_OFFSET
+        and trv.current is not None
+        and inputs.room_temperature is not None
+    ):
+        value -= _clamp(
+            trv.current - inputs.room_temperature, -OFFSET_LIMIT, OFFSET_LIMIT
+        )
+    return value
 
 
 def pending_commands(commands: list[Command], trvs: list[TrvInfo]) -> list[Command]:

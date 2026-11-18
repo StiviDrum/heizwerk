@@ -8,7 +8,7 @@ migration: ``_flatten`` on save, ``_nest`` when showing stored values.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import logging
 from typing import Any
 
@@ -20,8 +20,10 @@ from homeassistant.config_entries import (
     OptionsFlow,
     SubentryFlowResult,
 )
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import (
+    Optional as VisibleOptional,
     Required as VisibleRequired,
     section,
 )
@@ -38,23 +40,30 @@ from .const import (
     CONF_DEFAULT_TARGET,
     CONF_EXTERNAL_TEMPERATURE_ENTITIES,
     CONF_FROST_TEMPERATURE,
+    CONF_HEAT_SETPOINT,
     CONF_HUMIDITY_SENSOR,
     CONF_HUMIDITY_THRESHOLD,
+    CONF_HYSTERESIS_HIGH,
+    CONF_HYSTERESIS_LOW,
     CONF_LOCK_ENTITIES,
     CONF_LOCK_MODE,
     CONF_MAX_TEMP,
     CONF_MIN_TEMP,
+    CONF_MOLD_SENSOR,
     CONF_NAME,
     CONF_OBSERVE_ONLY,
     CONF_OUTDOOR_HUMIDITY,
+    CONF_OUTDOOR_LIMIT,
     CONF_OUTDOOR_TEMPERATURE,
     CONF_REGULATION,
     CONF_RESUME_ACTION,
     CONF_SEASON_ENTITY,
+    CONF_SEND_TEMPERATURE,
     CONF_SUMMER_LOCK_MINUTES,
     CONF_SUMMER_LOCK_TEMPERATURE,
     CONF_TARGET_ENTITY,
     CONF_TEMPERATURE_SENSOR,
+    CONF_TRV_MANUAL,
     CONF_TRVS,
     CONF_WALL_TEMPERATURE_SENSOR,
     CONF_WINDOW_CLOSE_DELAY,
@@ -62,7 +71,10 @@ from .const import (
     CONF_WINDOWS,
     CONF_ZEITWERK_PLAN,
     DEFAULT_FROST_TEMPERATURE,
+    DEFAULT_HEAT_SETPOINT,
     DEFAULT_HUMIDITY_THRESHOLD,
+    DEFAULT_HYSTERESIS_HIGH,
+    DEFAULT_HYSTERESIS_LOW,
     DEFAULT_MAX_TEMP,
     DEFAULT_MIN_TEMP,
     DEFAULT_SUMMER_LOCK_MINUTES,
@@ -76,7 +88,10 @@ from .const import (
     NAME,
     REGULATION_OFFSET,
     REGULATION_SETPOINT,
+    REGULATION_TWO_POINT,
     SUBENTRY_ROOM,
+    TRV_MANUAL_ADOPT,
+    TRV_MANUAL_RESET,
 )
 from .helpers import heizwerk_entities, is_heizwerk_entity
 
@@ -141,6 +156,7 @@ ROOM_SECTIONS: dict[str, tuple[str, ...]] = {
     SECTION_SCHEDULE: (CONF_ZEITWERK_PLAN, CONF_RESUME_ACTION),
     SECTION_ROOM_CLIMATE: (
         CONF_HUMIDITY_SENSOR,
+        CONF_MOLD_SENSOR,
         CONF_WALL_TEMPERATURE_SENSOR,
         CONF_HUMIDITY_THRESHOLD,
     ),
@@ -151,20 +167,45 @@ ROOM_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_LOCK_ENTITIES,
         CONF_LOCK_MODE,
         CONF_FROST_TEMPERATURE,
+        CONF_OUTDOOR_LIMIT,
     ),
     SECTION_REGULATION: (
-        CONF_CORRECTION,
         CONF_REGULATION,
-        CONF_EXTERNAL_TEMPERATURE_ENTITIES,
+        CONF_SEND_TEMPERATURE,
+        CONF_CORRECTION,
+        CONF_HYSTERESIS_LOW,
+        CONF_HYSTERESIS_HIGH,
+        CONF_HEAT_SETPOINT,
+        CONF_TRV_MANUAL,
     ),
     SECTION_LIMITS: (CONF_DEFAULT_TARGET, CONF_MIN_TEMP, CONF_MAX_TEMP),
 }
 
-# Fields with a visibility condition. A hidden field is omitted from the
-# submitted data; on save it keeps the stored value, else this default.
-ROOM_HIDEABLE_DEFAULTS: dict[str, Any] = {
-    CONF_FROST_TEMPERATURE: DEFAULT_FROST_TEMPERATURE,
+_TWO_POINT: Any = {"field": CONF_REGULATION, "value": REGULATION_TWO_POINT}
+
+
+def _is_two_point(data: Mapping[str, Any]) -> bool:
+    return data.get(CONF_REGULATION) == REGULATION_TWO_POINT
+
+
+# Fields with a visibility condition: (default, hidden(flat data)). A hidden
+# field is omitted from the submitted data; on save it keeps the stored
+# value, else the default (None = leave it out).
+ROOM_HIDEABLE: dict[str, tuple[Any, Callable[[Mapping[str, Any]], bool]]] = {
+    CONF_FROST_TEMPERATURE: (
+        DEFAULT_FROST_TEMPERATURE,
+        lambda d: d.get(CONF_LOCK_MODE) != LOCK_MODE_FROST,
+    ),
+    CONF_HYSTERESIS_LOW: (DEFAULT_HYSTERESIS_LOW, lambda d: not _is_two_point(d)),
+    CONF_HYSTERESIS_HIGH: (DEFAULT_HYSTERESIS_HIGH, lambda d: not _is_two_point(d)),
+    CONF_HEAT_SETPOINT: (DEFAULT_HEAT_SETPOINT, lambda d: not _is_two_point(d)),
+    CONF_WALL_TEMPERATURE_SENSOR: (None, lambda d: bool(d.get(CONF_MOLD_SENSOR))),
 }
+
+# Two-point regulation: smaller total hysteresis makes the valve chatter.
+MIN_HYSTERESIS = 0.2
+
+_TEMPERATURE_UNITS = {UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT}
 
 _COLLAPSED: Any = {"collapsed": True}
 
@@ -282,7 +323,16 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                         probatio.Optional(CONF_HUMIDITY_SENSOR): _entity(
                             ["sensor", "input_number"]
                         ),
-                        probatio.Optional(CONF_WALL_TEMPERATURE_SENSOR): _SENSOR_TEMP,
+                        probatio.Optional(CONF_MOLD_SENSOR): _entity(
+                            ["sensor"], device_class=["humidity"]
+                        ),
+                        VisibleOptional(
+                            CONF_WALL_TEMPERATURE_SENSOR,
+                            visible={
+                                "field": CONF_MOLD_SENSOR,
+                                "operator": "not_exists",
+                            },
+                        ): _SENSOR_TEMP,
                         probatio.Required(
                             CONF_HUMIDITY_THRESHOLD,
                             default=DEFAULT_HUMIDITY_THRESHOLD,
@@ -320,6 +370,9 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                             default=DEFAULT_FROST_TEMPERATURE,
                             visible={"field": CONF_LOCK_MODE, "value": LOCK_MODE_FROST},
                         ): _number(4, 12, 0.5, "°C"),
+                        probatio.Optional(CONF_OUTDOOR_LIMIT): _number(
+                            0, 30, 0.5, "°C"
+                        ),
                     }
                 ),
                 _COLLAPSED,
@@ -327,19 +380,48 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
             probatio.Required(SECTION_REGULATION): section(
                 probatio.Schema(
                     {
-                        probatio.Required(CONF_CORRECTION, default=0.0): _number(
-                            -5, 5, 0.1, "K"
-                        ),
                         probatio.Required(
                             CONF_REGULATION, default=REGULATION_SETPOINT
                         ): selector.SelectSelector(
                             selector.SelectSelectorConfig(
-                                options=[REGULATION_SETPOINT, REGULATION_OFFSET],
+                                options=[
+                                    REGULATION_SETPOINT,
+                                    REGULATION_OFFSET,
+                                    REGULATION_TWO_POINT,
+                                ],
                                 translation_key=CONF_REGULATION,
                             )
                         ),
-                        probatio.Optional(CONF_EXTERNAL_TEMPERATURE_ENTITIES): _entity(
-                            ["number", "input_number"], multiple=True
+                        # No schema default: an omitted value must not switch
+                        # sending on for 0.4 rooms (see send_temperature_default).
+                        probatio.Optional(
+                            CONF_SEND_TEMPERATURE
+                        ): selector.BooleanSelector(),
+                        probatio.Required(CONF_CORRECTION, default=0.0): _number(
+                            -5, 5, 0.1, "K"
+                        ),
+                        VisibleRequired(
+                            CONF_HYSTERESIS_LOW,
+                            default=DEFAULT_HYSTERESIS_LOW,
+                            visible=_TWO_POINT,
+                        ): _number(0, 3, 0.1, "K"),
+                        VisibleRequired(
+                            CONF_HYSTERESIS_HIGH,
+                            default=DEFAULT_HYSTERESIS_HIGH,
+                            visible=_TWO_POINT,
+                        ): _number(0, 3, 0.1, "K"),
+                        VisibleRequired(
+                            CONF_HEAT_SETPOINT,
+                            default=DEFAULT_HEAT_SETPOINT,
+                            visible=_TWO_POINT,
+                        ): _number(5, 35, 0.5, "°C"),
+                        probatio.Required(
+                            CONF_TRV_MANUAL, default=TRV_MANUAL_ADOPT
+                        ): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=[TRV_MANUAL_ADOPT, TRV_MANUAL_RESET],
+                                translation_key=CONF_TRV_MANUAL,
+                            )
                         ),
                     }
                 ),
@@ -397,9 +479,28 @@ def validate_room(
     ):
         errors[SECTION_LIMITS] = "min_max"
     if data.get(CONF_REGULATION) == REGULATION_OFFSET and data.get(
-        CONF_EXTERNAL_TEMPERATURE_ENTITIES
+        CONF_SEND_TEMPERATURE, True
     ):
         errors[SECTION_REGULATION] = "offset_with_external"
+    if data.get(CONF_REGULATION) == REGULATION_TWO_POINT:
+        if not data.get(CONF_TEMPERATURE_SENSOR):
+            errors[SECTION_REGULATION] = "two_point_needs_sensor"
+        elif (
+            float(data.get(CONF_HYSTERESIS_LOW, DEFAULT_HYSTERESIS_LOW))
+            + float(data.get(CONF_HYSTERESIS_HIGH, DEFAULT_HYSTERESIS_HIGH))
+            < MIN_HYSTERESIS
+        ):
+            errors[SECTION_REGULATION] = "hysteresis_too_small"
+    if (
+        hass is not None
+        and (wall := data.get(CONF_WALL_TEMPERATURE_SENSOR))
+        and (state := hass.states.get(wall)) is not None
+        # No unit (old helpers / templates) is accepted; a wrong one, e.g. % of
+        # a mold indicator, is not.
+        and (unit := state.attributes.get("unit_of_measurement")) is not None
+        and unit not in _TEMPERATURE_UNITS
+    ):
+        errors[SECTION_ROOM_CLIMATE] = "not_temperature"
     if actions := data.get(CONF_RESUME_ACTION):
         try:
             cv.SCRIPT_SCHEMA(actions)
@@ -470,6 +571,29 @@ def room_climate_entity_id(
     return f"climate.{DOMAIN}_{slugify(name)}"
 
 
+def send_temperature_default(stored: Mapping[str, Any]) -> bool:
+    """send_temperature of a room that has no stored value.
+
+    New rooms: on. Rooms from before 0.5: on only if they had explicit
+    external temperature inputs, so an unrelated edit never switches it on.
+    """
+    if not stored:
+        return True
+    return bool(stored.get(CONF_EXTERNAL_TEMPERATURE_ENTITIES))
+
+
+def room_input(
+    user_input: Mapping[str, Any], stored: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Flat submitted room data with the effective send_temperature."""
+    data = _flatten(user_input, ROOM_SECTIONS)
+    data.setdefault(
+        CONF_SEND_TEMPERATURE,
+        stored.get(CONF_SEND_TEMPERATURE, send_temperature_default(stored)),
+    )
+    return data
+
+
 async def _async_room_data(
     hass: HomeAssistant,
     user_input: Mapping[str, Any],
@@ -482,11 +606,20 @@ async def _async_room_data(
     plan is detected from the room's climate entity; the legacy Zeitwerk
     target (before 0.4) is dropped.
     """
-    data = _flatten(user_input, ROOM_SECTIONS)
+    data = room_input(user_input, stored)
     data.pop(CONF_TARGET_ENTITY, None)
-    for key, default in ROOM_HIDEABLE_DEFAULTS.items():
-        if key not in data:
-            data[key] = stored.get(key, default)
+    for key, (default, hidden) in ROOM_HIDEABLE.items():
+        if key not in data and hidden(data):
+            value = stored.get(key, default)
+            if value is not None:
+                data[key] = value
+    # Legacy (before 0.5): explicit external temperature inputs are kept
+    # unchanged (the runtime still honours them), but no longer offered.
+    # Dropped when sending is switched off (the runtime ignores it then).
+    if data[CONF_SEND_TEMPERATURE] and (
+        legacy := stored.get(CONF_EXTERNAL_TEMPERATURE_ENTITIES)
+    ):
+        data[CONF_EXTERNAL_TEMPERATURE_ENTITIES] = legacy
     if actions := cv.ensure_list(data.pop(CONF_RESUME_ACTION, None)):
         data[CONF_RESUME_ACTION] = actions
     if not data.get(CONF_ZEITWERK_PLAN):
@@ -495,6 +628,13 @@ async def _async_room_data(
         if plan := await async_detect_plan(hass, climate):
             data[CONF_ZEITWERK_PLAN] = plan
     return data
+
+
+def _room_suggestions(stored: Mapping[str, Any]) -> dict[str, Any]:
+    """Nest stored (flat) room data into the form sections."""
+    data = dict(stored)
+    data.setdefault(CONF_SEND_TEMPERATURE, send_temperature_default(stored))
+    return _nest(data, ROOM_SECTIONS)
 
 
 class HeizwerkConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -555,7 +695,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             errors = validate_room(
                 self._get_entry(),
-                _flatten(user_input, ROOM_SECTIONS),
+                room_input(user_input, {}),
                 hass=self.hass,
             )
             if not errors:
@@ -564,7 +704,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                _room_schema(self.hass), user_input or {}
+                _room_schema(self.hass), user_input or _room_suggestions({})
             ),
             errors=errors,
         )
@@ -579,7 +719,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             errors = validate_room(
                 entry,
-                _flatten(user_input, ROOM_SECTIONS),
+                room_input(user_input, subentry.data),
                 subentry.subentry_id,
                 hass=self.hass,
             )
@@ -594,7 +734,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
                 _room_schema(self.hass),
-                user_input or _nest(subentry.data, ROOM_SECTIONS),
+                user_input or _room_suggestions(subentry.data),
             ),
             errors=errors,
         )

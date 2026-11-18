@@ -105,7 +105,7 @@
           "sections": {
             "schedule": {
               "name": "Schedule & resume",
-              "description": "Your scheduler (Zeitwerk, Scheduler, automation) sets the room via climate.set_temperature. Here: plan display and what 'Resume' does. Resume: empty = zeitwerk.resume for the detected plan, without a plan resume is hidden; for Scheduler e.g. scheduler.run_action with the schedule switch.",
+              "description": "Your scheduler (Zeitwerk, Scheduler, automation) sets the room via climate.set_temperature. Here: plan display and what 'Resume' does.",
               "data": {
                 "zeitwerk_plan": "Zeitwerk plan",
                 "resume_action": "Resume action"
@@ -117,28 +117,31 @@
             },
             "room_climate": {
               "name": "Room climate",
-              "description": "Humidity, wall temperature and airing recommendation.",
+              "description": "Humidity, wall humidity (mold risk) and airing recommendation.",
               "data": {
                 "humidity_sensor": "Humidity sensor",
+                "mold_sensor": "Mold indicator (wall humidity in %)",
                 "wall_temperature_sensor": "Wall temperature sensor",
                 "humidity_threshold": "Airing recommended from"
               },
               "data_description": {
                 "humidity_sensor": "Room humidity for dew point and airing recommendation. Optional.",
-                "wall_temperature_sensor": "Coldest wall surface; gives the wall humidity (mold risk). Optional.",
+                "mold_sensor": "e.g. sensor.claude_schimmel_bad from HA's mold indicator; its value is used directly as wall humidity. Optional.",
+                "wall_temperature_sensor": "Temperature sensor (°C/°F) on the coldest wall surface; gives the wall humidity (mold risk). Hidden when a mold indicator is set. Optional.",
                 "humidity_threshold": "Airing is recommended above this room humidity. Default 60 %; bathrooms 65–70 %."
               }
             },
             "windows_locks": {
               "name": "Windows & locks",
-              "description": "Window contacts, additional locks and what happens while heating is locked.",
+              "description": "Window contacts, additional locks, summer lock of this room and what happens while heating is locked.",
               "data": {
                 "windows": "Window contacts",
                 "window_open_delay": "Window open: lock after",
                 "window_close_delay": "Window closed: release after",
                 "lock_entities": "Additional locks",
                 "lock_mode": "When locked",
-                "frost_temperature": "Frost protection temperature"
+                "frost_temperature": "Frost protection temperature",
+                "outdoor_limit": "Summer lock from (this room)"
               },
               "data_description": {
                 "windows": "Heating is locked while a window is open. Optional.",
@@ -146,21 +149,30 @@
                 "window_close_delay": "Delay before heating resumes after closing. Default 10 s.",
                 "lock_entities": "Heating is locked while one of these is on, e.g. a maintenance switch. Not for holidays or absence, that is Zeitwerk's job.",
                 "lock_mode": "Off relies on the thermostat's built-in frost protection (fine for Sonoff TRVZB). Default off.",
-                "frost_temperature": "Set-point while locked in frost mode. Default 7 °C."
+                "frost_temperature": "Set-point while locked in frost mode. Default 7 °C.",
+                "outdoor_limit": "Outdoor temperature from which this room is locked. Empty = house value from the Heizwerk options; 0 = no summer lock for this room."
               }
             },
             "regulation": {
               "name": "Regulation (advanced)",
-              "description": "How the set-point reaches the thermostats. Use either the external temperature input or offset, never both.",
+              "description": "How the set-point and the room temperature reach the thermostats. Use either sending the room temperature or offset, never both.",
               "data": {
-                "correction": "Correction",
                 "regulation": "Regulation",
-                "external_temperature_entities": "Thermostat external temperature inputs"
+                "send_temperature": "Send room temperature to thermostats",
+                "correction": "Correction",
+                "hysteresis_low": "Hysteresis below",
+                "hysteresis_high": "Hysteresis above",
+                "heat_setpoint": "Thermostat set-point while heating",
+                "trv_manual": "Turning the thermostat knob"
               },
               "data_description": {
-                "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; use 0 with an external temperature input.",
-                "regulation": "Set-point sends target plus correction (recommended). Offset also adds thermostat reading minus room sensor; only for thermostats without external input.",
-                "external_temperature_entities": "e.g. number.…_external_temperature_input. For Sonoff TRVZB preferred: set temperature_sensor_select to external in Z2M, regulation set-point, correction 0."
+                "regulation": "Set-point: thermostat regulates itself (recommended). Offset: adds thermostat reading minus room sensor, only without sending the room temperature. Two-point: valve open/closed by hysteresis.",
+                "send_temperature": "Heizwerk finds each thermostat's external temperature input (number.…_external_temperature_input) and sends the room sensor value (only with a room sensor). Sonoff TRVZB: measuring source remote_temperature in Zigbee2MQTT. Default on.",
+                "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; keep 0 while sending the room temperature.",
+                "hysteresis_low": "Heat when the room is this much below the target. Default 0.5 K.",
+                "hysteresis_high": "Stop heating when the room reaches target plus this. Default 0 K.",
+                "heat_setpoint": "Sent to the thermostat while heating so the valve opens fully. Default 24 °C.",
+                "trv_manual": "Adopt: a change at the thermostat is a manual override like on the card (default). Reset: Heizwerk sets its own value again."
               }
             },
             "limits": {
@@ -196,7 +208,7 @@
           "sections": {
             "schedule": {
               "name": "Schedule & resume",
-              "description": "Your scheduler (Zeitwerk, Scheduler, automation) sets the room via climate.set_temperature. Here: plan display and what 'Resume' does. Resume: empty = zeitwerk.resume for the detected plan, without a plan resume is hidden; for Scheduler e.g. scheduler.run_action with the schedule switch.",
+              "description": "Your scheduler (Zeitwerk, Scheduler, automation) sets the room via climate.set_temperature. Here: plan display and what 'Resume' does.",
               "data": {
                 "zeitwerk_plan": "Zeitwerk plan",
                 "resume_action": "Resume action"
@@ -208,28 +220,31 @@
             },
             "room_climate": {
               "name": "Room climate",
-              "description": "Humidity, wall temperature and airing recommendation.",
+              "description": "Humidity, wall humidity (mold risk) and airing recommendation.",
               "data": {
                 "humidity_sensor": "Humidity sensor",
+                "mold_sensor": "Mold indicator (wall humidity in %)",
                 "wall_temperature_sensor": "Wall temperature sensor",
                 "humidity_threshold": "Airing recommended from"
               },
               "data_description": {
                 "humidity_sensor": "Room humidity for dew point and airing recommendation. Optional.",
-                "wall_temperature_sensor": "Coldest wall surface; gives the wall humidity (mold risk). Optional.",
+                "mold_sensor": "e.g. sensor.claude_schimmel_bad from HA's mold indicator; its value is used directly as wall humidity. Optional.",
+                "wall_temperature_sensor": "Temperature sensor (°C/°F) on the coldest wall surface; gives the wall humidity (mold risk). Hidden when a mold indicator is set. Optional.",
                 "humidity_threshold": "Airing is recommended above this room humidity. Default 60 %; bathrooms 65–70 %."
               }
             },
             "windows_locks": {
               "name": "Windows & locks",
-              "description": "Window contacts, additional locks and what happens while heating is locked.",
+              "description": "Window contacts, additional locks, summer lock of this room and what happens while heating is locked.",
               "data": {
                 "windows": "Window contacts",
                 "window_open_delay": "Window open: lock after",
                 "window_close_delay": "Window closed: release after",
                 "lock_entities": "Additional locks",
                 "lock_mode": "When locked",
-                "frost_temperature": "Frost protection temperature"
+                "frost_temperature": "Frost protection temperature",
+                "outdoor_limit": "Summer lock from (this room)"
               },
               "data_description": {
                 "windows": "Heating is locked while a window is open. Optional.",
@@ -237,21 +252,30 @@
                 "window_close_delay": "Delay before heating resumes after closing. Default 10 s.",
                 "lock_entities": "Heating is locked while one of these is on, e.g. a maintenance switch. Not for holidays or absence, that is Zeitwerk's job.",
                 "lock_mode": "Off relies on the thermostat's built-in frost protection (fine for Sonoff TRVZB). Default off.",
-                "frost_temperature": "Set-point while locked in frost mode. Default 7 °C."
+                "frost_temperature": "Set-point while locked in frost mode. Default 7 °C.",
+                "outdoor_limit": "Outdoor temperature from which this room is locked. Empty = house value from the Heizwerk options; 0 = no summer lock for this room."
               }
             },
             "regulation": {
               "name": "Regulation (advanced)",
-              "description": "How the set-point reaches the thermostats. Use either the external temperature input or offset, never both.",
+              "description": "How the set-point and the room temperature reach the thermostats. Use either sending the room temperature or offset, never both.",
               "data": {
-                "correction": "Correction",
                 "regulation": "Regulation",
-                "external_temperature_entities": "Thermostat external temperature inputs"
+                "send_temperature": "Send room temperature to thermostats",
+                "correction": "Correction",
+                "hysteresis_low": "Hysteresis below",
+                "hysteresis_high": "Hysteresis above",
+                "heat_setpoint": "Thermostat set-point while heating",
+                "trv_manual": "Turning the thermostat knob"
               },
               "data_description": {
-                "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; use 0 with an external temperature input.",
-                "regulation": "Set-point sends target plus correction (recommended). Offset also adds thermostat reading minus room sensor; only for thermostats without external input.",
-                "external_temperature_entities": "e.g. number.…_external_temperature_input. For Sonoff TRVZB preferred: set temperature_sensor_select to external in Z2M, regulation set-point, correction 0."
+                "regulation": "Set-point: thermostat regulates itself (recommended). Offset: adds thermostat reading minus room sensor, only without sending the room temperature. Two-point: valve open/closed by hysteresis.",
+                "send_temperature": "Heizwerk finds each thermostat's external temperature input (number.…_external_temperature_input) and sends the room sensor value (only with a room sensor). Sonoff TRVZB: measuring source remote_temperature in Zigbee2MQTT. Default on.",
+                "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; keep 0 while sending the room temperature.",
+                "hysteresis_low": "Heat when the room is this much below the target. Default 0.5 K.",
+                "hysteresis_high": "Stop heating when the room reaches target plus this. Default 0 K.",
+                "heat_setpoint": "Sent to the thermostat while heating so the valve opens fully. Default 24 °C.",
+                "trv_manual": "Adopt: a change at the thermostat is a manual override like on the card (default). Reset: Heizwerk sets its own value again."
               }
             },
             "limits": {
@@ -276,9 +300,12 @@
         "name_exists": "A room with this name already exists.",
         "no_trvs": "Select at least one thermostat.",
         "min_max": "Maximum must be above minimum.",
-        "offset_with_external": "Offset regulation and an external temperature input compensate twice. Use regulation 'Set-point' with the external input.",
+        "offset_with_external": "Offset regulation and sending the room temperature compensate twice. Use regulation 'Set-point' or switch off sending the room temperature.",
         "heizwerk_entity": "Heizwerk entities are not allowed here (Heizwerk would control itself).",
-        "invalid_action": "The resume action is invalid. Check the action configuration."
+        "invalid_action": "The resume action is invalid. Check the action configuration.",
+        "not_temperature": "The wall temperature sensor must measure °C or °F. For a mold indicator (%) use the mold indicator field.",
+        "two_point_needs_sensor": "Two-point regulation needs a room temperature sensor; the thermostat's own reading next to the radiator would switch off too early.",
+        "hysteresis_too_small": "Two-point regulation: hysteresis below plus above must be at least 0.2 K, otherwise the valve switches constantly."
       },
       "abort": {
         "reconfigure_successful": "Room updated."
@@ -295,7 +322,14 @@
     "regulation": {
       "options": {
         "setpoint": "Set-point (+ correction)",
-        "offset": "Offset to room sensor"
+        "offset": "Offset to room sensor",
+        "two_point": "Two-point (valve open/closed, like the previous automation)"
+      }
+    },
+    "trv_manual": {
+      "options": {
+        "adopt": "Adopt as manual override",
+        "reset": "Reset to Heizwerk's value"
       }
     }
   },
@@ -388,6 +422,10 @@
     "target_entity_removed": {
       "title": "Heizwerk: Zeitwerk target of room {room} is no longer used",
       "description": "Since Heizwerk 0.4 the schedule writes to the room entity directly. The configured Zeitwerk target `{entity}` is ignored.\n\nTo switch:\n1. Change the profile actions of the room's Zeitwerk plan to `climate.set_temperature` targeting `{climate}`.\n2. Open the room in the Heizwerk integration and save it once – then this notice disappears."
+    },
+    "sensor_select_not_remote": {
+      "title": "Heizwerk: thermostat {trv} does not measure with the room sensor",
+      "description": "The measuring source {select} is \"{state}\" instead of remote_temperature. Set it back in Zigbee2MQTT or HA (select.select_option with remote_temperature). Heizwerk does not change it itself."
     }
   }
 }

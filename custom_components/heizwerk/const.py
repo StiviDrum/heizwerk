@@ -42,6 +42,15 @@ CONF_TARGET_ENTITY: Final = "target_entity"
 CONF_ZEITWERK_PLAN: Final = "zeitwerk_plan"
 # Actions (script syntax) run on "resume" and when a timed override ends.
 CONF_RESUME_ACTION: Final = "resume_action"
+CONF_SEND_TEMPERATURE: Final = "send_temperature"
+CONF_HYSTERESIS_LOW: Final = "hysteresis_low"
+CONF_HYSTERESIS_HIGH: Final = "hysteresis_high"
+CONF_HEAT_SETPOINT: Final = "heat_setpoint"
+# Optional per room; absent = hub summer_lock_temperature.
+CONF_OUTDOOR_LIMIT: Final = "outdoor_limit"
+CONF_TRV_MANUAL: Final = "trv_manual"
+# Mold indicator sensor (% relative humidity at the wall).
+CONF_MOLD_SENSOR: Final = "mold_sensor"
 CONF_LOCK_ENTITIES: Final = "lock_entities"
 CONF_LOCK_MODE: Final = "lock_mode"
 CONF_FROST_TEMPERATURE: Final = "frost_temperature"
@@ -58,6 +67,9 @@ LOCK_MODE_OFF: Final = "off"
 LOCK_MODE_FROST: Final = "frost"
 REGULATION_SETPOINT: Final = "setpoint"
 REGULATION_OFFSET: Final = "offset"
+REGULATION_TWO_POINT: Final = "two_point"
+TRV_MANUAL_ADOPT: Final = "adopt"
+TRV_MANUAL_RESET: Final = "reset"
 
 DEFAULT_WINDOW_OPEN_DELAY: Final = 30
 DEFAULT_WINDOW_CLOSE_DELAY: Final = 10
@@ -66,6 +78,9 @@ DEFAULT_TARGET: Final = 20.0
 DEFAULT_MIN_TEMP: Final = 5.0
 DEFAULT_MAX_TEMP: Final = 30.0
 DEFAULT_HUMIDITY_THRESHOLD: Final = 60
+DEFAULT_HYSTERESIS_LOW: Final = 0.5
+DEFAULT_HYSTERESIS_HIGH: Final = 0.0
+DEFAULT_HEAT_SETPOINT: Final = 24.0
 
 # --- Control timing ------------------------------------------------------
 DEBOUNCE_SECONDS: Final = 10.0

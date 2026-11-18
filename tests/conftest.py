@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from homeassistant.config_entries import ConfigSubentryData
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceRegistry
 import pytest
 from pytest_homeassistant.common import MockConfigEntry
 
@@ -127,3 +127,39 @@ def setup_room(hass: HomeAssistant, house: None) -> Callable[..., Any]:
         return entry
 
     return _setup
+
+
+class _Call:
+    def __init__(self, data: dict) -> None:
+        self.data = data
+
+
+@pytest.fixture
+def calls(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Record climate commands to the fake thermostat and let it follow them.
+
+    The real climate services are registered (Heizwerk's own entity), so the
+    calls to the plain-state fake TRV are intercepted here.
+    """
+    recorded: dict[str, Any] = {"mode": [], "temp": [], "deaf": False}
+    original = ServiceRegistry.async_call
+
+    async def async_call(self, domain, service, service_data=None, *args, **kwargs):
+        data = dict(service_data or {})
+        if domain == "climate" and data.get("entity_id") == TRV:
+            state = hass.states.get(TRV)
+            attrs = dict(state.attributes) if state else {}
+            mode = state.state if state else "off"
+            if service == "set_hvac_mode":
+                recorded["mode"].append(_Call(data))
+                mode = data["hvac_mode"]
+            elif service == "set_temperature":
+                recorded["temp"].append(_Call(data))
+                attrs["temperature"] = data["temperature"]
+            if not recorded["deaf"]:
+                hass.states.async_set(TRV, mode, attrs)
+            return None
+        return await original(self, domain, service, service_data, *args, **kwargs)
+
+    monkeypatch.setattr(ServiceRegistry, "async_call", async_call)
+    return recorded

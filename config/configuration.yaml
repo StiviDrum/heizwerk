@@ -28,6 +28,7 @@ input_number:
   # Room sensors
   sim_bad_temperature: {name: Sim Bad Raumtemperatur, min: 5, max: 30, step: 0.1, unit_of_measurement: "°C", initial: 18.5}
   sim_bad_humidity: {name: Sim Bad Feuchte, min: 20, max: 100, step: 1, unit_of_measurement: "%", initial: 60}
+  sim_bad_mold: {name: Sim Bad Schimmel-Indikator, min: 0, max: 100, step: 1, unit_of_measurement: "%", initial: 74}
   sim_bad_wall: {name: Sim Bad Wandtemperatur, min: 0, max: 30, step: 0.1, unit_of_measurement: "°C", initial: 15.6}
   sim_kueche_temperature: {name: Sim Küche Raumtemperatur, min: 5, max: 30, step: 0.1, unit_of_measurement: "°C", initial: 17.5}
   sim_kueche_humidity: {name: Sim Küche Feuchte, min: 20, max: 100, step: 1, unit_of_measurement: "%", initial: 55}
@@ -58,6 +59,14 @@ template:
       - {name: TRV Bad Eigenmessung, unique_id: sim_trv_bad_t, device_class: temperature, unit_of_measurement: "°C", state: "{{ states('input_number.sim_trv_bad_temperature') }}"}
       - {name: TRV Kueche Eigenmessung, unique_id: sim_trv_kueche_t, device_class: temperature, unit_of_measurement: "°C", state: "{{ states('input_number.sim_trv_kueche_temperature') }}"}
       - {name: Außentemperatur, unique_id: sim_outdoor_t, device_class: temperature, unit_of_measurement: "°C", state_class: measurement, state: "{{ states('input_number.sim_outdoor_temperature') }}"}
+      # Like HA's mold indicator: humidity at the coldest wall spot + critical temperature.
+      - name: Schimmel Bad
+        unique_id: sim_mold_bad
+        device_class: humidity
+        unit_of_measurement: "%"
+        state: "{{ states('input_number.sim_bad_mold') }}"
+        attributes:
+          estimated_critical_temp: "16.3"
       - {name: Außenfeuchte, unique_id: sim_outdoor_h, device_class: humidity, unit_of_measurement: "%", state_class: measurement, state: "{{ states('input_number.sim_outdoor_humidity') }}"}
   - binary_sensor:
       - {name: Fenster Bad, unique_id: sim_window_bad, device_class: window, state: "{{ is_state('input_boolean.sim_fenster_bad', 'on') }}"}

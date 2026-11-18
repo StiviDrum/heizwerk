@@ -33,7 +33,11 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import (
+    config_validation as cv,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_point_in_utc_time,
@@ -49,23 +53,30 @@ from .const import (
     CONF_DEFAULT_TARGET,
     CONF_EXTERNAL_TEMPERATURE_ENTITIES,
     CONF_FROST_TEMPERATURE,
+    CONF_HEAT_SETPOINT,
     CONF_HUMIDITY_SENSOR,
     CONF_HUMIDITY_THRESHOLD,
+    CONF_HYSTERESIS_HIGH,
+    CONF_HYSTERESIS_LOW,
     CONF_LOCK_ENTITIES,
     CONF_LOCK_MODE,
     CONF_MAX_TEMP,
     CONF_MIN_TEMP,
+    CONF_MOLD_SENSOR,
     CONF_NAME,
     CONF_OBSERVE_ONLY,
     CONF_OUTDOOR_HUMIDITY,
+    CONF_OUTDOOR_LIMIT,
     CONF_OUTDOOR_TEMPERATURE,
     CONF_REGULATION,
     CONF_RESUME_ACTION,
     CONF_SEASON_ENTITY,
+    CONF_SEND_TEMPERATURE,
     CONF_SUMMER_LOCK_MINUTES,
     CONF_SUMMER_LOCK_TEMPERATURE,
     CONF_TARGET_ENTITY,
     CONF_TEMPERATURE_SENSOR,
+    CONF_TRV_MANUAL,
     CONF_TRVS,
     CONF_WALL_TEMPERATURE_SENSOR,
     CONF_WINDOW_CLOSE_DELAY,
@@ -74,7 +85,10 @@ from .const import (
     CONF_ZEITWERK_PLAN,
     DEBOUNCE_SECONDS,
     DEFAULT_FROST_TEMPERATURE,
+    DEFAULT_HEAT_SETPOINT,
     DEFAULT_HUMIDITY_THRESHOLD,
+    DEFAULT_HYSTERESIS_HIGH,
+    DEFAULT_HYSTERESIS_LOW,
     DEFAULT_MAX_TEMP,
     DEFAULT_MIN_TEMP,
     DEFAULT_SUMMER_LOCK_MINUTES,
@@ -92,7 +106,9 @@ from .const import (
     MANUAL_DURATION,
     MANUAL_UNTIL_NEXT,
     REGULATION_SETPOINT,
+    REGULATION_TWO_POINT,
     RESYNC_MINUTES,
+    TRV_MANUAL_ADOPT,
     TRV_UNAVAILABLE_EVENT_MINUTES,
 )
 from .helpers import is_heizwerk_entity
@@ -110,6 +126,8 @@ from .logic import (
     dew_point,
     mold_level,
     pending_commands,
+    room_target_from_trv,
+    round_to_step,
     surface_humidity,
     ventilation_minutes,
     ventilation_recommended,
@@ -118,6 +136,10 @@ from .logic import (
 _LOGGER = logging.getLogger(__name__)
 
 _ACTIVE_STATES = {"on", "true", "open"}
+REMOTE_TEMPERATURE = "remote_temperature"
+SELECT_ISSUE_MINUTES = 5
+# A set-point report within this time after our own command is an echo.
+KNOB_ECHO_SECONDS = 30
 _INVALID = {STATE_UNAVAILABLE, STATE_UNKNOWN, "", None}
 
 
@@ -147,6 +169,8 @@ class ManualOverride:
     mode: str
     until: datetime | None
     by: str | None = None
+    # "heizwerk" (card / service) or "thermostat" (knob turned at the TRV)
+    source: str = "heizwerk"
     resume_sent: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -156,6 +180,7 @@ class ManualOverride:
             "mode": self.mode,
             "until": _iso(self.until),
             "by": self.by,
+            "source": self.source,
         }
 
     @classmethod
@@ -170,6 +195,7 @@ class ManualOverride:
                 mode=str(data["mode"]),
                 until=dt_util.parse_datetime(until) if until else None,
                 by=data.get("by"),
+                source=str(data.get("source") or "heizwerk"),
             )
         except KeyError, TypeError, ValueError:
             return None
@@ -204,9 +230,18 @@ class RoomController:
         ]
         self.window_ids: list[str] = list(room.get(CONF_WINDOWS, []))
         self.lock_ids: list[str] = list(room.get(CONF_LOCK_ENTITIES, []))
-        self.external_ids: list[str] = list(
+        # Explicit inputs from 0.1–0.4 rooms; since 0.5 found per thermostat.
+        self.legacy_external_ids: list[str] = list(
             room.get(CONF_EXTERNAL_TEMPERATURE_ENTITIES, [])
         )
+        self.send_temperature: bool = bool(
+            room.get(CONF_SEND_TEMPERATURE, bool(self.legacy_external_ids))
+        )
+        self.external_ids: list[str] = list(self.legacy_external_ids)
+        # Measuring-source selects of the thermostats (Sonoff TRVZB).
+        self.sensor_selects: dict[str, str] = {}
+        self.regulation: str = room.get(CONF_REGULATION, REGULATION_SETPOINT)
+        self.trv_manual: str = room.get(CONF_TRV_MANUAL, TRV_MANUAL_ADOPT)
         if self.ignored_entities:
             _LOGGER.warning(
                 "%s: ignoring Heizwerk's own entities %s as thermostats "
@@ -255,6 +290,10 @@ class RoomController:
         self._started = False
         self._sending = False
         self._tracker: CALLBACK_TYPE | None = None
+        self._two_point_on = False
+        # Last set-point sent per thermostat (to tell echoes from knob turns).
+        self._sent: dict[str, tuple[float, datetime]] = {}
+        self._select_bad_since: dict[str, datetime] = {}
 
     # --- Configuration helpers --------------------------------------------
 
@@ -277,6 +316,8 @@ class RoomController:
             self.config.get(CONF_TEMPERATURE_SENSOR),
             self.config.get(CONF_HUMIDITY_SENSOR),
             self.config.get(CONF_WALL_TEMPERATURE_SENSOR),
+            self.config.get(CONF_MOLD_SENSOR),
+            *self.sensor_selects,
             self.hub_config.get(CONF_OUTDOOR_TEMPERATURE),
             self.hub_config.get(CONF_OUTDOOR_HUMIDITY),
             self.hub_config.get(CONF_SEASON_ENTITY),
@@ -321,8 +362,18 @@ class RoomController:
         if self._started:
             return
         self._started = True
-        self._subscribe()
         now = dt_util.utcnow()
+        self._discover_device_entities()
+        self._subscribe()
+        self._init_two_point()
+        for select in self.sensor_selects:
+            # Keep an existing issue while still wrong, drop it when fixed.
+            state = self._state(select)
+            if state is not None and state.state not in _INVALID:
+                if state.state == REMOTE_TEMPERATURE:
+                    ir.async_delete_issue(self.hass, DOMAIN, f"sensor_select_{select}")
+                else:
+                    self._select_bad_since[select] = now
         if self._is_window_open():
             # Open since before the start: count from now, lock immediately.
             self.window_open_since = now - timedelta(seconds=self._window_open_delay)
@@ -330,13 +381,65 @@ class RoomController:
         # Thermostats may restore their own state late during start-up.
         self._unsubs.append(async_at_started(self.hass, self._async_hass_started))
 
+    def _init_two_point(self) -> None:
+        """Continue heating after a restart inside the hysteresis band."""
+        if self.regulation != REGULATION_TWO_POINT or self._two_point_on:
+            return
+        heat = float(self.config.get(CONF_HEAT_SETPOINT, DEFAULT_HEAT_SETPOINT))
+        self._two_point_on = any(
+            t.available
+            and t.hvac_mode not in (None, HVAC_OFF)
+            and t.setpoint is not None
+            and abs(t.setpoint - heat) < 0.6
+            for t in self._trv_infos()
+        )
+
     @callback
     def _async_hass_started(self, _hass: HomeAssistant) -> None:
+        # Thermostats (MQTT) are often restored only now.
+        self._init_two_point()
         self.async_update()
         if not self.plan:
             self.hass.async_create_task(
                 self._async_detect_plan(), f"heizwerk detect plan {self.name}"
             )
+
+    def _discover_device_entities(self) -> None:
+        """Find external-temperature inputs and measuring-source selects.
+
+        Sonoff TRVZB (Zigbee2MQTT) exposes them on the thermostat's device as
+        number.<trv>_external_temperature_input and
+        select.<trv>_temperature_sensor_select.
+        """
+        ent_reg = er.async_get(self.hass)
+        found: list[str] = []
+        selects: dict[str, str] = {}
+        for trv in self.trv_ids:
+            entry = ent_reg.async_get(trv)
+            if entry is None or entry.device_id is None:
+                continue
+            for other in er.async_entries_for_device(ent_reg, entry.device_id):
+                if other.disabled_by is not None:
+                    continue
+                names = (other.entity_id, str(other.unique_id))
+                if other.domain == "number" and any(
+                    n.endswith("external_temperature_input") for n in names
+                ):
+                    found.append(other.entity_id)
+                elif other.domain == "select" and any(
+                    n.endswith("temperature_sensor_select") for n in names
+                ):
+                    selects[other.entity_id] = trv
+        # Only with a room sensor: without one there is nothing to send, and
+        # a thermostat on remote_temperature would keep a stale value.
+        if self.send_temperature and self.config.get(CONF_TEMPERATURE_SENSOR):
+            self.external_ids = sorted({*self.legacy_external_ids, *found})
+        else:
+            self.external_ids = []
+        stale = set(self.sensor_selects) - set(selects)
+        self.sensor_selects = selects if self.external_ids else {}
+        for select in stale | (set(selects) - set(self.sensor_selects)):
+            ir.async_delete_issue(self.hass, DOMAIN, f"sensor_select_{select}")
 
     def _subscribe(self) -> None:
         if self._tracker:
@@ -462,6 +565,7 @@ class RoomController:
         temperature: float,
         duration: timedelta | None,
         user_name: str | None = None,
+        source: str = "heizwerk",
     ) -> None:
         """Set the set-point by hand (Heizwerk card, heizwerk.set_manual)."""
         now = dt_util.utcnow()
@@ -471,7 +575,9 @@ class RoomController:
         else:
             # Without a resume action a duration could not restore anything.
             mode, until = MANUAL_UNTIL_NEXT, None
-        self.manual = ManualOverride(self.base_target, mode, until, user_name)
+        self.manual = ManualOverride(
+            self.base_target, mode, until, user_name, source=source
+        )
         self.enabled = True
         self.async_update()
 
@@ -512,6 +618,8 @@ class RoomController:
     def _async_state_changed(self, event: Event[EventStateChangedData]) -> None:
         entity_id = event.data["entity_id"]
         now = dt_util.utcnow()
+        if entity_id in self.trv_ids and self._knob_turned(event, now):
+            return
         if entity_id in self.window_ids:
             if self._is_window_open():
                 if self.window_open_since is None:
@@ -523,6 +631,53 @@ class RoomController:
             ):
                 self.window_closed_since = now
         self.async_update()
+
+    def _knob_turned(self, event: Event[EventStateChangedData], now: datetime) -> bool:
+        """Handle a set-point changed at the thermostat itself (not by Heizwerk).
+
+        True if adopted as manual override. Otherwise the normal evaluation
+        runs and, if needed, sends Heizwerk's value again ("reset").
+        """
+        if self.observe_only or self._sending or self.trv_manual != TRV_MANUAL_ADOPT:
+            return False
+        if not self.enabled or self._locks(now):
+            # Locked (window, summer …): the thermostat is held at off / frost.
+            return False
+        old, new = event.data["old_state"], event.data["new_state"]
+        if old is None or new is None or new.state in _INVALID or old.state in _INVALID:
+            return False  # also: thermostat just came back (battery swap, reset)
+        if new.state == HVAC_OFF:
+            return False
+        if new.context.parent_id is not None:
+            return False  # written by an automation / script, not by hand
+        before = _float(old.attributes.get(ATTR_TEMPERATURE))
+        after = _float(new.attributes.get(ATTR_TEMPERATURE))
+        if after is None or before is None or abs(after - before) < 1e-6:
+            return False
+        entity_id = event.data["entity_id"]
+        sent = self._sent.get(entity_id)
+        if sent is not None and now - sent[1] < timedelta(seconds=KNOB_ECHO_SECONDS):
+            if abs(sent[0] - after) < 1e-6:
+                return False  # echo of our own command
+            if old.state != new.state:
+                return False  # mode switch by our command: TRV reports its old value
+        trv = next((t for t in self._trv_infos() if t.entity_id == entity_id), None)
+        if trv is None:
+            return False
+        if self.regulation == REGULATION_TWO_POINT:
+            # The thermostat shows the heat set-point, not the room target:
+            # take the change as a delta.
+            target = round_to_step(self.base_target + (after - before), 0.5)
+        else:
+            current, _ = self._room_temperature(self._trv_infos())
+            inputs = self._inputs(current, [])
+            target = round_to_step(room_target_from_trv(after, inputs, trv), 0.5)
+        target = self._clamp(target)
+        if abs(target - self.base_target) < 1e-6:
+            return False
+        _LOGGER.debug("%s: knob turned at %s to %s", self.name, entity_id, after)
+        self.set_manual(target, None, None, source="thermostat")
+        return True
 
     def _locks(self, now: datetime) -> list[str]:
         locks: list[str] = []
@@ -552,9 +707,14 @@ class RoomController:
         return locks
 
     def _summer_locked(self, now: datetime) -> bool:
-        threshold = float(
-            self.hub_config.get(
-                CONF_SUMMER_LOCK_TEMPERATURE, DEFAULT_SUMMER_LOCK_TEMPERATURE
+        room_limit = _float(self.config.get(CONF_OUTDOOR_LIMIT))
+        threshold = (
+            room_limit
+            if room_limit is not None
+            else float(
+                self.hub_config.get(
+                    CONF_SUMMER_LOCK_TEMPERATURE, DEFAULT_SUMMER_LOCK_TEMPERATURE
+                )
             )
         )
         outdoor = self._number(self.hub_config.get(CONF_OUTDOOR_TEMPERATURE))
@@ -599,22 +759,10 @@ class RoomController:
         current, source = self._room_temperature(trvs)
         locks = self._locks(now)
 
-        decision = decide(
-            RoomInputs(
-                enabled=self.enabled,
-                target=self._clamp(target),
-                room_temperature=current,
-                trvs=trvs,
-                locks=locks,
-                manual=manual_active,
-                correction=float(self.config.get(CONF_CORRECTION, 0.0)),
-                regulation=self.config.get(CONF_REGULATION, REGULATION_SETPOINT),
-                lock_mode=self.config.get(CONF_LOCK_MODE, LOCK_MODE_OFF),
-                frost_temperature=float(
-                    self.config.get(CONF_FROST_TEMPERATURE, DEFAULT_FROST_TEMPERATURE)
-                ),
-            )
-        )
+        inputs = self._inputs(current, trvs, locks, manual_active)
+        inputs.target = self._clamp(target)
+        decision = decide(inputs)
+        self._two_point_on = decision.two_point_on
         changed = [c.as_dict() for c in decision.commands] != [
             c.as_dict() for c in self.planned
         ]
@@ -624,6 +772,7 @@ class RoomController:
         self.planned = decision.commands
 
         self._update_trv_availability(now, trvs)
+        self._check_sensor_selects(now)
         self._update_climate(now, current, source, trvs, locks)
         self._push_external(now, current, source)
 
@@ -649,6 +798,38 @@ class RoomController:
         self._schedule_wakeup(now)
         for update in list(self._listeners):
             update()
+
+    def _inputs(
+        self,
+        current: float | None,
+        trvs: list[TrvInfo],
+        locks: list[str] | None = None,
+        manual: bool = False,
+    ) -> RoomInputs:
+        return RoomInputs(
+            enabled=self.enabled,
+            target=self.base_target,
+            room_temperature=current,
+            trvs=trvs,
+            locks=locks or [],
+            manual=manual,
+            correction=float(self.config.get(CONF_CORRECTION, 0.0)),
+            regulation=self.regulation,
+            lock_mode=self.config.get(CONF_LOCK_MODE, LOCK_MODE_OFF),
+            frost_temperature=float(
+                self.config.get(CONF_FROST_TEMPERATURE, DEFAULT_FROST_TEMPERATURE)
+            ),
+            hysteresis_low=float(
+                self.config.get(CONF_HYSTERESIS_LOW, DEFAULT_HYSTERESIS_LOW)
+            ),
+            hysteresis_high=float(
+                self.config.get(CONF_HYSTERESIS_HIGH, DEFAULT_HYSTERESIS_HIGH)
+            ),
+            heat_setpoint=float(
+                self.config.get(CONF_HEAT_SETPOINT, DEFAULT_HEAT_SETPOINT)
+            ),
+            two_point_on=self._two_point_on,
+        )
 
     async def _async_debounced(self, _now: datetime) -> None:
         self._debounce = None
@@ -680,6 +861,11 @@ class RoomController:
             trv = trvs[cmd.entity_id]
             try:
                 if trv.hvac_mode != cmd.hvac_mode:
+                    previous = self._sent.get(cmd.entity_id)
+                    self._sent[cmd.entity_id] = (
+                        previous[0] if previous else float("nan"),
+                        dt_util.utcnow(),
+                    )
                     await self.hass.services.async_call(
                         "climate",
                         "set_hvac_mode",
@@ -688,6 +874,7 @@ class RoomController:
                         context=context,
                     )
                 if cmd.hvac_mode != HVAC_OFF and cmd.temperature is not None:
+                    self._sent[cmd.entity_id] = (cmd.temperature, dt_util.utcnow())
                     await self.hass.services.async_call(
                         "climate",
                         "set_temperature",
@@ -738,6 +925,36 @@ class RoomController:
             )
         self.last_sync = now
 
+    def _check_sensor_selects(self, now: datetime) -> None:
+        """Repair issue if a thermostat no longer measures with the room sensor.
+
+        Heizwerk only reports it (does not switch the source itself).
+        unavailable / unknown (restarts) do not count.
+        """
+        for select, trv in self.sensor_selects.items():
+            state = self._state(select)
+            issue_id = f"sensor_select_{select}"
+            value = state.state if state else None
+            if value in _INVALID or value == REMOTE_TEMPERATURE:
+                if self._select_bad_since.pop(select, None) is not None:
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                continue
+            since = self._select_bad_since.setdefault(select, now)
+            if now - since >= timedelta(minutes=SELECT_ISSUE_MINUTES):
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="sensor_select_not_remote",
+                    translation_placeholders={
+                        "trv": trv,
+                        "select": select,
+                        "state": str(value),
+                    },
+                )
+
     def _update_trv_availability(self, now: datetime, trvs: list[TrvInfo]) -> None:
         if any(not t.available for t in trvs):
             if self.trv_unavailable_since is None:
@@ -782,7 +999,23 @@ class RoomController:
         outdoor_humidity = self._number(self.hub_config.get(CONF_OUTDOOR_HUMIDITY))
         dew = dew_point(current, humidity)
         outdoor_dew = dew_point(outdoor, outdoor_humidity)
-        wall_humidity = surface_humidity(dew, wall)
+        wall_critical: float | None = None
+        mold_state = self._state(self.config.get(CONF_MOLD_SENSOR))
+        if self.config.get(CONF_MOLD_SENSOR):
+            # HA mold indicator: humidity at the coldest wall spot, in %.
+            wall_source: str | None = "indicator"
+            wall = None
+            wall_humidity = _float(mold_state.state) if mold_state else None
+            if mold_state is not None:
+                wall_critical = _float(
+                    mold_state.attributes.get("estimated_critical_temp")
+                )
+        elif self.config.get(CONF_WALL_TEMPERATURE_SENSOR):
+            wall_source = "sensor"
+            wall_humidity = surface_humidity(dew, wall)
+        else:
+            wall_source = None
+            wall_humidity = None
         window_open = self._is_window_open()
         minutes = ventilation_minutes(outdoor)
         open_for = (
@@ -867,6 +1100,10 @@ class RoomController:
             "ventilation_recommended": self.values["ventilation_recommended"],
             "dew_point": dew,
             "wall_temperature": wall,
+            "wall_source": wall_source,
+            "wall_critical_temperature": wall_critical,
+            "regulation": self.regulation,
+            "external_inputs": self.external_ids,
             "wall_humidity": wall_humidity,
             "mold_level": mold_level(wall_humidity),
             "outdoor_temperature": outdoor,
@@ -888,6 +1125,7 @@ class RoomController:
                 "manual_mode": manual.mode,
                 "manual_until": _iso(until),
                 "manual_by": manual.by,
+                "manual_source": manual.source,
             }
         if zeitwerk_active:
             # Changed outside the Heizwerk card (more-info dialog, voice …).
@@ -896,12 +1134,14 @@ class RoomController:
                 "manual_mode": MANUAL_UNTIL_NEXT,
                 "manual_until": _iso(zeitwerk_until),
                 "manual_by": None,
+                "manual_source": "zeitwerk",
             }
         return {
             "manual_target": None,
             "manual_mode": None,
             "manual_until": None,
             "manual_by": None,
+            "manual_source": None,
         }
 
     # --- Timers ---------------------------------------------------------------
@@ -940,6 +1180,8 @@ class RoomController:
             candidates.append(self.summer_since + timedelta(minutes=minutes))
         if self.manual is not None and self.manual.until is not None:
             candidates.append(self.manual.until)
+        for since in self._select_bad_since.values():
+            candidates.append(since + timedelta(minutes=SELECT_ISSUE_MINUTES))
         if self.trv_unavailable_since is not None and not self.trv_event_sent:
             candidates.append(
                 self.trv_unavailable_since

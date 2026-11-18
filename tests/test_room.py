@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
-from homeassistant.core import HomeAssistant, ServiceRegistry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant.common import async_fire_time_changed, async_mock_service
@@ -21,42 +20,6 @@ from .conftest import (
     WINDOW,
     trv_state,
 )
-
-
-class _Call:
-    def __init__(self, data: dict) -> None:
-        self.data = data
-
-
-@pytest.fixture
-def calls(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch):
-    """Record climate commands to the fake thermostat and let it follow them.
-
-    The real climate services are registered (Heizwerk's own entity), so the
-    calls to the plain-state fake TRV are intercepted here.
-    """
-    recorded: dict[str, Any] = {"mode": [], "temp": [], "deaf": False}
-    original = ServiceRegistry.async_call
-
-    async def async_call(self, domain, service, service_data=None, *args, **kwargs):
-        data = dict(service_data or {})
-        if domain == "climate" and data.get("entity_id") == TRV:
-            state = hass.states.get(TRV)
-            attrs = dict(state.attributes) if state else {}
-            mode = state.state if state else "off"
-            if service == "set_hvac_mode":
-                recorded["mode"].append(_Call(data))
-                mode = data["hvac_mode"]
-            elif service == "set_temperature":
-                recorded["temp"].append(_Call(data))
-                attrs["temperature"] = data["temperature"]
-            if not recorded["deaf"]:
-                hass.states.async_set(TRV, mode, attrs)
-            return None
-        return await original(self, domain, service, service_data, *args, **kwargs)
-
-    monkeypatch.setattr(ServiceRegistry, "async_call", async_call)
-    return recorded
 
 
 async def _tick(

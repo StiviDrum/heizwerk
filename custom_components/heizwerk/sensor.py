@@ -12,7 +12,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HeizwerkConfigEntry
-from .const import CONF_HUMIDITY_SENSOR, CONF_WALL_TEMPERATURE_SENSOR
+from .const import (
+    CONF_HUMIDITY_SENSOR,
+    CONF_MOLD_SENSOR,
+    CONF_WALL_TEMPERATURE_SENSOR,
+)
 from .entity import HeizwerkEntity
 from .room import RoomController
 
@@ -27,8 +31,11 @@ async def async_setup_entry(
         entities: list[SensorEntity] = []
         if room.config.get(CONF_HUMIDITY_SENSOR):
             entities.append(DewPointSensor(room))
-            if room.config.get(CONF_WALL_TEMPERATURE_SENSOR):
-                entities.append(WallHumiditySensor(room))
+        if room.config.get(CONF_MOLD_SENSOR) or (
+            room.config.get(CONF_HUMIDITY_SENSOR)
+            and room.config.get(CONF_WALL_TEMPERATURE_SENSOR)
+        ):
+            entities.append(WallHumiditySensor(room))
         if entities:
             async_add_entities(entities, config_subentry_id=subentry_id)
 

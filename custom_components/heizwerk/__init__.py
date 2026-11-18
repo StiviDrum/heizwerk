@@ -14,7 +14,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CARD_FILENAME, CARD_URL_BASE, DATA_CARD_REGISTERED, DOMAIN
@@ -59,6 +59,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: HeizwerkConfigEntry) ->
     if unloaded:
         entry.runtime_data.async_stop()
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: HeizwerkConfigEntry) -> None:
+    """Integration removed: drop all of its repair issues."""
+    for domain, issue_id in list(ir.async_get(hass).issues):
+        if domain == DOMAIN:
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: HeizwerkConfigEntry) -> None:

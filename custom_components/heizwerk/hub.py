@@ -51,6 +51,19 @@ class HeizwerkHub:
         """Start all rooms once the platforms (and restore) are set up."""
         for room in self.rooms.values():
             room.async_start()
+        # Issues of thermostats that are no longer part of any room.
+        known = {
+            f"sensor_select_{sel}"
+            for r in self.rooms.values()
+            for sel in r.sensor_selects
+        }
+        for domain, issue_id in list(ir.async_get(self.hass).issues):
+            if (
+                domain == DOMAIN
+                and issue_id.startswith("sensor_select_")
+                and issue_id not in known
+            ):
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     @callback
     def async_stop(self) -> None:
