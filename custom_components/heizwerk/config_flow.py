@@ -363,6 +363,9 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                             selector.SelectSelectorConfig(
                                 options=[LOCK_MODE_OFF, LOCK_MODE_FROST],
                                 translation_key=CONF_LOCK_MODE,
+                                # Dropdown: HA 2026.11 draws the radio dot off-centre
+                                # (ha-radio-option squeezes its 16x16 SVG to 11.2x14).
+                                mode=selector.SelectSelectorMode.DROPDOWN,
                             )
                         ),
                         VisibleRequired(
@@ -390,6 +393,9 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                                     REGULATION_TWO_POINT,
                                 ],
                                 translation_key=CONF_REGULATION,
+                                # Dropdown: HA 2026.11 draws the radio dot off-centre
+                                # (ha-radio-option squeezes its 16x16 SVG to 11.2x14).
+                                mode=selector.SelectSelectorMode.DROPDOWN,
                             )
                         ),
                         # No schema default: an omitted value must not switch
@@ -421,6 +427,9 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                             selector.SelectSelectorConfig(
                                 options=[TRV_MANUAL_ADOPT, TRV_MANUAL_RESET],
                                 translation_key=CONF_TRV_MANUAL,
+                                # Dropdown: HA 2026.11 draws the radio dot off-centre
+                                # (ha-radio-option squeezes its 16x16 SVG to 11.2x14).
+                                mode=selector.SelectSelectorMode.DROPDOWN,
                             )
                         ),
                     }

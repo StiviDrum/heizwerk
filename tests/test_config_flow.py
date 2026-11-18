@@ -948,3 +948,23 @@ def test_wall_sensor_without_unit_is_accepted(hass: HomeAssistant) -> None:
         entry, room_data(wall_temperature_sensor="sensor.mold"), hass=hass
     )
     assert bad["room_climate"] == "not_temperature"
+
+
+def test_all_option_selects_are_dropdowns(hass: HomeAssistant) -> None:
+    """0.5.1: HA 2026.11 draws radio dots off-centre – no radio lists in our forms."""
+    from homeassistant.data_entry_flow import section
+    from homeassistant.helpers.selector import SelectSelector
+
+    from custom_components.heizwerk.config_flow import _hub_schema, _room_schema
+
+    def selects(schema):
+        for value in schema.schema.values():
+            if isinstance(value, section):
+                yield from selects(value.schema)
+            elif isinstance(value, SelectSelector):
+                yield value
+
+    found = [*selects(_hub_schema()), *selects(_room_schema(hass))]
+    assert len(found) >= 3
+    for sel in found:
+        assert sel.serialize()["selector"]["select"].get("mode") == "dropdown"
