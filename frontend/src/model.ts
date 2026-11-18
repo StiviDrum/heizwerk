@@ -68,6 +68,8 @@ export interface Room {
   outdoor: number | null;
   wallTemperature: number | null;
   wallHumidity: number | null;
+  wallSource: string | null;
+  wallCriticalTemperature: number | null;
   moldLevel: string | null;
   humidityThreshold: number;
   windowOpen: boolean;
@@ -79,6 +81,7 @@ export interface Room {
   manualUntil: Date | null;
   manualMode: string | null;
   manualBy: string | null;
+  manualSource: string | null;
   plan: string | null;
   profile: string | null;
   profileId: string | null;
@@ -89,6 +92,8 @@ export interface Room {
   trvUnavailableSince: Date | null;
   locks: LockAttr[];
   observeOnly: boolean;
+  regulation: string;
+  externalInputs: string[];
   lastSync: Date | null;
   temperatureSource: string;
   seasonActive: boolean | null;
@@ -127,6 +132,8 @@ export function parseRoom(state: HassEntityLike): Room {
     outdoor: num(a.outdoor_temperature),
     wallTemperature: num(a.wall_temperature),
     wallHumidity: num(a.wall_humidity),
+    wallSource: str(a.wall_source),
+    wallCriticalTemperature: num(a.wall_critical_temperature),
     moldLevel: str(a.mold_level),
     humidityThreshold: num(a.humidity_threshold) ?? 60,
     windowOpen: a.window_open === true,
@@ -138,6 +145,7 @@ export function parseRoom(state: HassEntityLike): Room {
     manualUntil: date(a.manual_until),
     manualMode: str(a.manual_mode),
     manualBy: str(a.manual_by),
+    manualSource: str(a.manual_source),
     plan: str(a.zeitwerk_plan),
     profile: str(a.zeitwerk_profile),
     profileId: str(a.zeitwerk_profile_id),
@@ -148,6 +156,10 @@ export function parseRoom(state: HassEntityLike): Room {
     trvUnavailableSince: date(a.trv_unavailable_since),
     locks: Array.isArray(a.locks) ? (a.locks as LockAttr[]) : [],
     observeOnly: a.observe_only === true,
+    regulation: str(a.regulation) ?? "setpoint",
+    externalInputs: Array.isArray(a.external_inputs)
+      ? a.external_inputs.filter((x): x is string => typeof x === "string" && x !== "")
+      : [],
     lastSync: date(a.last_sync),
     temperatureSource: str(a.temperature_source) ?? "sensor",
     seasonActive: typeof a.season_active === "boolean" ? a.season_active : null,
@@ -320,6 +332,7 @@ export function statusView(
   if (room.status === "manual") {
     let text = s.manual.replace("{t}", t(room.manualTarget ?? room.target));
     if (room.manualBy) text += ` ${s.by} ${room.manualBy}`;
+    else if (room.manualSource === "thermostat") text += ` ${s.atThermostat}`;
     if (room.manualUntil) text += ` · ${s.until} ${fmtTime(room.manualUntil, fmt)}`;
     else if (room.resumeAvailable) text += ` · ${s.untilNext}`;
     return { tone: "violet", text, chip: null, locked: false };
@@ -392,8 +405,14 @@ export function roomNote(room: Room, s: Strings, fmt: Fmt): Note | null {
     return {
       tone: room.moldLevel === "alarm" ? "red" : "amber",
       title: room.moldLevel === "alarm" ? s.moldAlarm : s.moldWarning,
-      text: s.moldText
+      text: (room.wallSource === "indicator"
+        ? room.wallCriticalTemperature === null
+          ? s.moldTextIndicator.replace(/ \([^)]*\{t\}[^)]*\)/, "")
+          : s.moldTextIndicator
+        : s.moldText
+      )
         .replace("{wall}", fmtTemp(room.wallTemperature, fmt))
+        .replace("{t}", fmtTemp(room.wallCriticalTemperature, fmt))
         .replace("{rh}", fmtTemp(room.wallHumidity, fmt, 0)),
     };
   }
@@ -474,4 +493,33 @@ export function keyDelta(key: string, step: number): number | null {
     default:
       return null;
   }
+}
+
+/** Note line of the "wall humidity" climate cell (empty text = no line). */
+export function wallNote(room: Room, s: Strings, fmt: Fmt): { text: string; warn: boolean } {
+  const warn = room.moldLevel === "warning" || room.moldLevel === "alarm";
+  if (room.wallSource === "indicator") {
+    const t = room.wallCriticalTemperature;
+    return { text: t === null ? "" : s.wallCritical.replace("{t}", fmtTemp(t, fmt)), warn };
+  }
+  const tpl = warn ? s.wallAttention : s.wallOk;
+  return { text: tpl.replace("{t}", fmtTemp(room.wallTemperature, fmt)), warn };
+}
+
+export interface FootItem {
+  text: string;
+  warn?: boolean;
+}
+
+/**
+ * Footer items after the TRV text: sensor, regulation when two-point.
+ * TRV reading while external inputs are configured = the room sensor failed
+ * (thermostats run on a stale value) -> extra warning item.
+ */
+export function footInfo(room: Room, s: Strings): FootItem[] {
+  const trv = room.temperatureSource === "trv";
+  const items: FootItem[] = [{ text: `${s.sensor}: ${trv ? s.sensorTrv : s.sensorRoom}` }];
+  if (trv && room.externalInputs.length) items.push({ text: s.roomSensorMissing, warn: true });
+  if (room.regulation === "two_point") items.push({ text: s.twoPoint });
+  return items;
 }

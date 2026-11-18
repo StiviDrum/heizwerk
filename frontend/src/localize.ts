@@ -41,6 +41,11 @@ export interface Strings {
   wallHumidity: string;
   wallAttention: string;
   wallOk: string;
+  wallCritical: string;
+  moldTextIndicator: string;
+  atThermostat: string;
+  twoPoint: string;
+  roomSensorMissing: string;
   today: string;
   trv: string;
   trvNone: string;
@@ -107,6 +112,12 @@ const de: Strings = {
   wallHumidity: "Wandfeuchte",
   wallAttention: "Achtung · Wand {t}°",
   wallOk: "Wand {t}°",
+  wallCritical: "kritisch unter {t}°",
+  moldTextIndicator:
+    "Feuchte an der kältesten Wandstelle {rh} % (kritisch unter {t} °C). Lüften und gleichmäßig heizen.",
+  atThermostat: "am Thermostat",
+  twoPoint: "Zweipunkt",
+  roomSensorMissing: "Raumfühler fehlt",
   today: "Heute",
   trv: "TRV",
   trvNone: "kein TRV",
@@ -173,6 +184,12 @@ const en: Strings = {
   wallHumidity: "Wall humidity",
   wallAttention: "Attention · wall {t}°",
   wallOk: "Wall {t}°",
+  wallCritical: "critical below {t}°",
+  moldTextIndicator:
+    "Humidity at the coldest wall spot {rh} % (critical below {t} °C). Air and heat evenly.",
+  atThermostat: "at the thermostat",
+  twoPoint: "two-point",
+  roomSensorMissing: "room sensor missing",
   today: "Today",
   trv: "TRV",
   trvNone: "no TRV",

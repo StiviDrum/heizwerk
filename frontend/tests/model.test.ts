@@ -16,6 +16,8 @@ import {
   statusView,
   stepTarget,
   trvText,
+  wallNote,
+  footInfo,
   type HassEntityLike,
   type ZeitwerkPlan,
 } from "../src/model";
@@ -352,5 +354,122 @@ describe("parseRoom", () => {
     expect(room).not.toHaveProperty("targetEntity");
     expect(parseRoom(entity({})).resumeAvailable).toBe(false);
     expect(parseRoom(entity({ resume_available: "yes" })).resumeAvailable).toBe(false);
+  });
+});
+
+describe("0.5.0 wall indicator, manual source, footer", () => {
+  const ind = {
+    wall_source: "indicator",
+    wall_humidity: 74,
+    wall_temperature: null,
+    wall_critical_temperature: 16.2,
+  };
+  it("wall cell note: sensor vs indicator", () => {
+    const sensor = parseRoom(
+      entity({ wall_source: "sensor", wall_humidity: 55, wall_temperature: 16.4 }),
+    );
+    expect(wallNote(sensor, de, fmt)).toEqual({ text: "Wand 16,4°", warn: false });
+    const sensorWarn = parseRoom(
+      entity({ wall_humidity: 72, wall_temperature: 15.6, mold_level: "warning" }),
+    );
+    expect(wallNote(sensorWarn, de, fmt)).toEqual({ text: "Achtung · Wand 15,6°", warn: true });
+    expect(wallNote(parseRoom(entity(ind)), de, fmt)).toEqual({
+      text: "kritisch unter 16,2°",
+      warn: false,
+    });
+    const alarm = parseRoom(entity({ ...ind, mold_level: "alarm" }));
+    expect(wallNote(alarm, de, fmt)).toEqual({ text: "kritisch unter 16,2°", warn: true });
+    expect(wallNote(alarm, strings("en"), fmt).text).toBe("critical below 16,2°");
+  });
+  it("mold note with an indicator", () => {
+    const room = parseRoom(entity({ ...ind, mold_level: "warning" }));
+    expect(roomNote(room, de, fmt)).toMatchObject({
+      tone: "amber",
+      text: "Feuchte an der kältesten Wandstelle 74 % (kritisch unter 16,2 °C). Lüften und gleichmäßig heizen.",
+    });
+    expect(roomNote(room, strings("en"), fmt)?.text).toBe(
+      "Humidity at the coldest wall spot 74 % (critical below 16,2 °C). Air and heat evenly.",
+    );
+  });
+  it("manual at the thermostat", () => {
+    const base = { status: "manual", manual_target: 21 };
+    const t = (a: Record<string, unknown>, lang = de) =>
+      statusView(parseRoom(entity({ ...base, ...a })), lang, fmt).text;
+    expect(t({ manual_source: "thermostat", resume_available: true })).toBe(
+      "Manuell 21° am Thermostat · bis nächster Block",
+    );
+    expect(t({ manual_source: "thermostat" }, strings("en"))).toContain("at the thermostat");
+    expect(t({ manual_source: "thermostat", manual_by: "Steven" })).toBe("Manuell 21° von Steven");
+    expect(t({ manual_source: "zeitwerk" })).toBe("Manuell 21°");
+    expect(t({ manual_source: "heizwerk" })).toBe("Manuell 21°");
+  });
+  it("parses the new attributes", () => {
+    const room = parseRoom(
+      entity({
+        ...ind,
+        manual_source: "thermostat",
+        regulation: "two_point",
+        external_inputs: ["number.trv_bad_external", 3, ""],
+      }),
+    );
+    expect(room).toMatchObject({
+      wallSource: "indicator",
+      wallCriticalTemperature: 16.2,
+      wallTemperature: null,
+      manualSource: "thermostat",
+      regulation: "two_point",
+      externalInputs: ["number.trv_bad_external"],
+    });
+    expect(parseRoom(entity({}))).toMatchObject({
+      wallSource: null,
+      manualSource: null,
+      regulation: "setpoint",
+      externalInputs: [],
+    });
+  });
+  it("footer sensor and regulation", () => {
+    const f = (a: Record<string, unknown>, lang = de) =>
+      footInfo(parseRoom(entity(a)), lang).map((x) => (x.warn ? `!${x.text}` : x.text));
+    expect(f({})).toEqual(["Fühler: Raum"]);
+    expect(f({ external_inputs: ["number.x"] })).toEqual(["Fühler: Raum"]);
+    expect(f({ temperature_source: "trv" })).toEqual(["Fühler: TRV"]);
+    // TRV reading although Heizwerk feeds external inputs = room sensor failed.
+    expect(f({ temperature_source: "trv", external_inputs: ["number.x"] })).toEqual([
+      "Fühler: TRV",
+      "!Raumfühler fehlt",
+    ]);
+    expect(f({ temperature_source: "trv", external_inputs: ["number.x"] }, strings("en"))).toEqual([
+      "Sensor: TRV",
+      "!room sensor missing",
+    ]);
+    expect(f({ regulation: "two_point" })).toEqual(["Fühler: Raum", "Zweipunkt"]);
+    expect(f({ regulation: "two_point" }, strings("en"))).toEqual(["Sensor: room", "two-point"]);
+    expect(f({ regulation: "offset" })).toEqual(["Fühler: Raum"]);
+  });
+  it("indicator without critical temperature shows no wall note", () => {
+    const room = parseRoom(
+      entity({ wall_source: "indicator", wall_humidity: 70, wall_critical_temperature: null }),
+    );
+    expect(wallNote(room, de, fmt)).toEqual({ text: "", warn: false });
+    const warn = parseRoom(
+      entity({ wall_source: "indicator", wall_humidity: 80, mold_level: "warning" }),
+    );
+    expect(wallNote(warn, de, fmt)).toEqual({ text: "", warn: true });
+  });
+});
+
+describe("indicator note without critical temperature", () => {
+  it("omits the critical part", () => {
+    const room = parseRoom(
+      entity({
+        wall_source: "indicator",
+        mold_level: "warning",
+        wall_humidity: 74,
+        wall_critical_temperature: null,
+      }),
+    );
+    const note = roomNote(room, de, fmt);
+    expect(note?.text).not.toContain("kritisch");
+    expect(note?.text).toContain("74 %");
   });
 });

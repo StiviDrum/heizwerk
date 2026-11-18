@@ -382,6 +382,10 @@ export const standardStyles = css`
     border-top: 1px solid var(--hw-line);
     padding-top: 12px;
   }
+  .foot .fwarn {
+    color: var(--hw-amber);
+    font-weight: 600;
+  }
   .foot .obs {
     color: var(--hw-violet);
     font-weight: 600;

@@ -13,6 +13,7 @@ import {
   fmtTarget,
   fmtTemp,
   fmtTime,
+  footInfo,
   fraction,
   fractionToValue,
   keyDelta,
@@ -23,6 +24,7 @@ import {
   statusView,
   stepTarget,
   trvText,
+  wallNote,
   type Fmt,
   type HassEntityLike,
   type Room,
@@ -657,14 +659,12 @@ export class HeizwerkCard extends LitElement {
       );
     }
     if (room.wallHumidity !== null) {
-      const warn = room.moldLevel === "warning" || room.moldLevel === "alarm";
+      const wn = wallNote(room, s, fmt);
       cells.push(
         html`<div class="m ${room.moldLevel === "alarm" ? "t-red" : "t-amber"}">
           <span class="k">${s.wallHumidity}</span>
           <span class="v num">${fmtTemp(room.wallHumidity, fmt, 0)} %</span>
-          <span class="n ${warn ? "warn" : ""}"
-            >${(warn ? s.wallAttention : s.wallOk).replace("{t}", fmtTemp(room.wallTemperature, fmt))}</span
-          >
+          ${wn.text ? html`<span class="n ${wn.warn ? "warn" : ""}">${wn.text}</span>` : nothing}
         </div>`,
       );
     }
@@ -697,7 +697,7 @@ export class HeizwerkCard extends LitElement {
     const fmt = this._fmt;
     return html`<div class="foot">
       <span>${trvText(room, s, fmt, sv.locked)}</span>
-      <span>${s.sensor}: ${room.temperatureSource === "trv" ? s.sensorTrv : s.sensorRoom}</span>
+      ${footInfo(room, s).map((f) => html`<span class=${f.warn ? "fwarn" : ""}>${f.text}</span>`)}
       ${room.lastSync ? html`<span>${s.sync} ${fmtTime(room.lastSync, fmt)}</span>` : nothing}
       ${room.observeOnly ? html`<span class="obs">${s.observeOnly}</span>` : nothing}
     </div>`;
