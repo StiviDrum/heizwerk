@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/brand/heizwerk-icon.svg" width="128" alt="Heizwerk"></p>
+
 # Heizwerk
 
 **Zeitwerk plans, Heizwerk controls.** Room heating control for Home Assistant
@@ -9,7 +11,7 @@ turns it into commands for the radiator thermostats (TRVs) of a room: external
 room sensor, locks, manual override, knob at the thermostat and room-climate
 hints. Without a scheduler Heizwerk is simply a thermostat per room.
 
-> **Version 0.5.0.** New rooms start in **observe-only** mode: Heizwerk computes
+> **Version 0.5.1.** New rooms start in **observe-only** mode: Heizwerk computes
 > everything and shows what it would send, but does not touch the thermostats
 > until you switch that off per room. See [CHANGELOG](CHANGELOG.md).
 
@@ -40,7 +42,9 @@ hints. Without a scheduler Heizwerk is simply a thermostat per room.
   temperature sensor or directly from a mold indicator), airing recommendation,
   "aired enough" event.
 - **Card** `custom:heizwerk-card`, registered automatically – standard room card
-  and compact tile / house list, light and dark, German and English.
+  (dial, room climate, day band with the plan name) and a full-width compact
+  card / house list (status, temperatures, ±, info line, progress bar), light
+  and dark, German and English.
 
 ## Installation
 
@@ -80,7 +84,7 @@ entity: climate.heizwerk_bad          # standard room card
 ```yaml
 type: custom:heizwerk-card
 variant: compact
-entity: climate.heizwerk_kueche       # one-line tile, tap for details
+entity: climate.heizwerk_kueche       # full-width tile: status, temperatures, ±, info line
 ```
 
 ```yaml
