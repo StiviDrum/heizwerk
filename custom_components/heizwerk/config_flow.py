@@ -1,7 +1,15 @@
-"""Config flow: one Heizwerk entry (house options) + one subentry per room."""
+"""Config flow: one Heizwerk entry (house options) + one subentry per room.
+
+The forms group optional settings in collapsible sections. Sections nest the
+submitted data, but entry options and room subentry data are stored flat (same
+keys as before sections existed), so the runtime and older entries need no
+migration: ``_flatten`` on save, ``_nest`` when showing stored values.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+import logging
 from typing import Any
 
 from homeassistant.config_entries import (
@@ -13,9 +21,13 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import (
+    Required as VisibleRequired,
+    section,
+)
 from homeassistant.helpers import selector
 from homeassistant.util import slugify
-import voluptuous as vol
+import probatio
 
 from .const import (
     CONF_CORRECTION,
@@ -62,6 +74,8 @@ from .const import (
     SUBENTRY_ROOM,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 def _entity(
     domain: list[str], multiple: bool = False, device_class: list[str] | None = None
@@ -96,21 +110,111 @@ def _number(
     )
 
 
-def _hub_schema() -> vol.Schema:
-    return vol.Schema(
+# --- Form layout -----------------------------------------------------------
+# Section keys and the (flat, stored) fields each section holds. The order of
+# the fields here is the order in the form.
+
+SECTION_SUMMER_LOCK = "summer_lock"
+SECTION_CLIMATE = "climate"
+
+HUB_SECTIONS: dict[str, tuple[str, ...]] = {
+    SECTION_SUMMER_LOCK: (CONF_SUMMER_LOCK_TEMPERATURE, CONF_SUMMER_LOCK_MINUTES),
+    SECTION_CLIMATE: (CONF_OUTDOOR_HUMIDITY,),
+}
+
+SECTION_ZEITWERK = "zeitwerk"
+SECTION_ROOM_CLIMATE = "room_climate"
+SECTION_WINDOWS_LOCKS = "windows_locks"
+SECTION_REGULATION = "regulation"
+SECTION_LIMITS = "limits"
+
+ROOM_SECTIONS: dict[str, tuple[str, ...]] = {
+    SECTION_ZEITWERK: (CONF_ZEITWERK_PLAN,),
+    SECTION_ROOM_CLIMATE: (
+        CONF_HUMIDITY_SENSOR,
+        CONF_WALL_TEMPERATURE_SENSOR,
+        CONF_HUMIDITY_THRESHOLD,
+    ),
+    SECTION_WINDOWS_LOCKS: (
+        CONF_WINDOWS,
+        CONF_WINDOW_OPEN_DELAY,
+        CONF_WINDOW_CLOSE_DELAY,
+        CONF_LOCK_ENTITIES,
+        CONF_LOCK_MODE,
+        CONF_FROST_TEMPERATURE,
+    ),
+    SECTION_REGULATION: (
+        CONF_CORRECTION,
+        CONF_REGULATION,
+        CONF_EXTERNAL_TEMPERATURE_ENTITIES,
+    ),
+    SECTION_LIMITS: (CONF_MIN_TEMP, CONF_MAX_TEMP),
+}
+
+# Fields with a visibility condition. A hidden field is omitted from the
+# submitted data; on save it keeps the stored value, else this default.
+ROOM_HIDEABLE_DEFAULTS: dict[str, Any] = {
+    CONF_DEFAULT_TARGET: DEFAULT_TARGET,
+    CONF_FROST_TEMPERATURE: DEFAULT_FROST_TEMPERATURE,
+}
+
+_COLLAPSED: Any = {"collapsed": True}
+
+
+def _flatten(
+    data: Mapping[str, Any], sections: Mapping[str, tuple[str, ...]]
+) -> dict[str, Any]:
+    """Merge the section dicts of submitted form data into one flat dict."""
+    flat: dict[str, Any] = {}
+    for key, value in data.items():
+        if key in sections and isinstance(value, Mapping):
+            flat.update(value)
+        else:
+            flat[key] = value
+    return flat
+
+
+def _nest(
+    flat: Mapping[str, Any], sections: Mapping[str, tuple[str, ...]]
+) -> dict[str, Any]:
+    """Group flat stored data into the form's sections (for suggested values)."""
+    in_section = {key for keys in sections.values() for key in keys}
+    nested: dict[str, Any] = {
+        key: value for key, value in flat.items() if key not in in_section
+    }
+    for name, keys in sections.items():
+        nested[name] = {key: flat[key] for key in keys if key in flat}
+    return nested
+
+
+def _hub_schema() -> probatio.Schema:
+    # No weather entities: their state is a condition, not a number.
+    outdoor = _entity(["sensor", "input_number"])
+    return probatio.Schema(
         {
-            # No weather entities: their state is a condition, not a number.
-            vol.Optional(CONF_OUTDOOR_TEMPERATURE): _entity(["sensor", "input_number"]),
-            vol.Optional(CONF_OUTDOOR_HUMIDITY): _entity(["sensor", "input_number"]),
-            vol.Optional(CONF_SEASON_ENTITY): _entity(
+            probatio.Optional(CONF_OUTDOOR_TEMPERATURE): outdoor,
+            probatio.Optional(CONF_SEASON_ENTITY): _entity(
                 ["input_boolean", "binary_sensor", "switch", "schedule"]
             ),
-            vol.Required(
-                CONF_SUMMER_LOCK_TEMPERATURE, default=DEFAULT_SUMMER_LOCK_TEMPERATURE
-            ): _number(0, 30, 0.5, "°C"),
-            vol.Required(
-                CONF_SUMMER_LOCK_MINUTES, default=DEFAULT_SUMMER_LOCK_MINUTES
-            ): _number(0, 240, 1, "min"),
+            probatio.Required(SECTION_SUMMER_LOCK): section(
+                probatio.Schema(
+                    {
+                        probatio.Required(
+                            CONF_SUMMER_LOCK_TEMPERATURE,
+                            default=DEFAULT_SUMMER_LOCK_TEMPERATURE,
+                        ): _number(0, 30, 0.5, "°C"),
+                        probatio.Required(
+                            CONF_SUMMER_LOCK_MINUTES,
+                            default=DEFAULT_SUMMER_LOCK_MINUTES,
+                        ): _number(0, 240, 1, "min"),
+                    }
+                ),
+                _COLLAPSED,
+            ),
+            probatio.Required(SECTION_CLIMATE): section(
+                probatio.Schema({probatio.Optional(CONF_OUTDOOR_HUMIDITY): outdoor}),
+                _COLLAPSED,
+            ),
         }
     )
 
@@ -127,7 +231,7 @@ def zeitwerk_plans(hass: HomeAssistant) -> list[str]:
     )
 
 
-def _room_schema(hass: HomeAssistant) -> vol.Schema:
+def _room_schema(hass: HomeAssistant) -> probatio.Schema:
     plans = zeitwerk_plans(hass)
     plan_selector: Any = (
         selector.SelectSelector(
@@ -140,73 +244,122 @@ def _room_schema(hass: HomeAssistant) -> vol.Schema:
         if plans
         else selector.TextSelector()
     )
-    return vol.Schema(
+    return probatio.Schema(
         {
-            vol.Required(CONF_NAME): selector.TextSelector(),
-            vol.Required(CONF_TRVS): _entity(["climate"], multiple=True),
-            vol.Optional(CONF_TEMPERATURE_SENSOR): _SENSOR_TEMP,
-            vol.Optional(CONF_HUMIDITY_SENSOR): _entity(["sensor", "input_number"]),
-            vol.Optional(CONF_WALL_TEMPERATURE_SENSOR): _SENSOR_TEMP,
-            vol.Optional(CONF_WINDOWS): _entity(
-                ["binary_sensor", "input_boolean"], multiple=True
-            ),
-            vol.Required(
-                CONF_WINDOW_OPEN_DELAY, default=DEFAULT_WINDOW_OPEN_DELAY
-            ): _number(0, 900, 1, "s"),
-            vol.Required(
-                CONF_WINDOW_CLOSE_DELAY, default=DEFAULT_WINDOW_CLOSE_DELAY
-            ): _number(0, 900, 1, "s"),
-            vol.Optional(CONF_TARGET_ENTITY): _entity(
+            probatio.Required(CONF_NAME): selector.TextSelector(),
+            probatio.Required(CONF_TRVS): _entity(["climate"], multiple=True),
+            probatio.Optional(CONF_TEMPERATURE_SENSOR): _SENSOR_TEMP,
+            probatio.Optional(CONF_TARGET_ENTITY): _entity(
                 ["input_number", "number", "sensor", "climate"]
             ),
-            vol.Optional(CONF_ZEITWERK_PLAN): plan_selector,
-            vol.Optional(CONF_LOCK_ENTITIES): _entity(
-                ["input_boolean", "binary_sensor", "switch"], multiple=True
+            # Top level, not in the "zeitwerk" section: a visibility condition
+            # can only reference fields of its own section / level.
+            VisibleRequired(
+                CONF_DEFAULT_TARGET,
+                default=DEFAULT_TARGET,
+                visible={"field": CONF_TARGET_ENTITY, "operator": "not_exists"},
+            ): _number(5, 30, 0.5, "°C"),
+            probatio.Required(
+                CONF_OBSERVE_ONLY, default=True
+            ): selector.BooleanSelector(),
+            probatio.Required(SECTION_ZEITWERK): section(
+                probatio.Schema({probatio.Optional(CONF_ZEITWERK_PLAN): plan_selector}),
+                _COLLAPSED,
             ),
-            vol.Required(
-                CONF_LOCK_MODE, default=LOCK_MODE_OFF
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[LOCK_MODE_OFF, LOCK_MODE_FROST],
-                    translation_key=CONF_LOCK_MODE,
-                )
+            probatio.Required(SECTION_ROOM_CLIMATE): section(
+                probatio.Schema(
+                    {
+                        probatio.Optional(CONF_HUMIDITY_SENSOR): _entity(
+                            ["sensor", "input_number"]
+                        ),
+                        probatio.Optional(CONF_WALL_TEMPERATURE_SENSOR): _SENSOR_TEMP,
+                        probatio.Required(
+                            CONF_HUMIDITY_THRESHOLD,
+                            default=DEFAULT_HUMIDITY_THRESHOLD,
+                        ): _number(30, 95, 1, "%"),
+                    }
+                ),
+                _COLLAPSED,
             ),
-            vol.Required(
-                CONF_FROST_TEMPERATURE, default=DEFAULT_FROST_TEMPERATURE
-            ): _number(4, 12, 0.5, "°C"),
-            vol.Required(CONF_CORRECTION, default=0.0): _number(-5, 5, 0.1, "K"),
-            vol.Required(
-                CONF_REGULATION, default=REGULATION_SETPOINT
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[REGULATION_SETPOINT, REGULATION_OFFSET],
-                    translation_key=CONF_REGULATION,
-                )
+            probatio.Required(SECTION_WINDOWS_LOCKS): section(
+                probatio.Schema(
+                    {
+                        probatio.Optional(CONF_WINDOWS): _entity(
+                            ["binary_sensor", "input_boolean"], multiple=True
+                        ),
+                        probatio.Required(
+                            CONF_WINDOW_OPEN_DELAY, default=DEFAULT_WINDOW_OPEN_DELAY
+                        ): _number(0, 900, 1, "s"),
+                        probatio.Required(
+                            CONF_WINDOW_CLOSE_DELAY,
+                            default=DEFAULT_WINDOW_CLOSE_DELAY,
+                        ): _number(0, 900, 1, "s"),
+                        probatio.Optional(CONF_LOCK_ENTITIES): _entity(
+                            ["input_boolean", "binary_sensor", "switch"], multiple=True
+                        ),
+                        probatio.Required(
+                            CONF_LOCK_MODE, default=LOCK_MODE_OFF
+                        ): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=[LOCK_MODE_OFF, LOCK_MODE_FROST],
+                                translation_key=CONF_LOCK_MODE,
+                            )
+                        ),
+                        VisibleRequired(
+                            CONF_FROST_TEMPERATURE,
+                            default=DEFAULT_FROST_TEMPERATURE,
+                            visible={"field": CONF_LOCK_MODE, "value": LOCK_MODE_FROST},
+                        ): _number(4, 12, 0.5, "°C"),
+                    }
+                ),
+                _COLLAPSED,
             ),
-            vol.Optional(CONF_EXTERNAL_TEMPERATURE_ENTITIES): _entity(
-                ["number", "input_number"], multiple=True
+            probatio.Required(SECTION_REGULATION): section(
+                probatio.Schema(
+                    {
+                        probatio.Required(CONF_CORRECTION, default=0.0): _number(
+                            -5, 5, 0.1, "K"
+                        ),
+                        probatio.Required(
+                            CONF_REGULATION, default=REGULATION_SETPOINT
+                        ): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=[REGULATION_SETPOINT, REGULATION_OFFSET],
+                                translation_key=CONF_REGULATION,
+                            )
+                        ),
+                        probatio.Optional(CONF_EXTERNAL_TEMPERATURE_ENTITIES): _entity(
+                            ["number", "input_number"], multiple=True
+                        ),
+                    }
+                ),
+                _COLLAPSED,
             ),
-            vol.Required(CONF_DEFAULT_TARGET, default=DEFAULT_TARGET): _number(
-                5, 30, 0.5, "°C"
+            probatio.Required(SECTION_LIMITS): section(
+                probatio.Schema(
+                    {
+                        probatio.Required(
+                            CONF_MIN_TEMP, default=DEFAULT_MIN_TEMP
+                        ): _number(4, 30, 0.5, "°C"),
+                        probatio.Required(
+                            CONF_MAX_TEMP, default=DEFAULT_MAX_TEMP
+                        ): _number(5, 35, 0.5, "°C"),
+                    }
+                ),
+                _COLLAPSED,
             ),
-            vol.Required(CONF_MIN_TEMP, default=DEFAULT_MIN_TEMP): _number(
-                4, 30, 0.5, "°C"
-            ),
-            vol.Required(CONF_MAX_TEMP, default=DEFAULT_MAX_TEMP): _number(
-                5, 35, 0.5, "°C"
-            ),
-            vol.Required(
-                CONF_HUMIDITY_THRESHOLD, default=DEFAULT_HUMIDITY_THRESHOLD
-            ): _number(30, 95, 1, "%"),
-            vol.Required(CONF_OBSERVE_ONLY, default=True): selector.BooleanSelector(),
         }
     )
 
 
 def validate_room(
-    entry: ConfigEntry, data: dict[str, Any], subentry_id: str | None = None
+    entry: ConfigEntry, data: Mapping[str, Any], subentry_id: str | None = None
 ) -> dict[str, str]:
-    """Return form errors for a room."""
+    """Return form errors for a room (flat data).
+
+    Errors of fields inside a section are keyed by the section key; the
+    frontend shows them at that section (same as core integrations do).
+    """
     errors: dict[str, str] = {}
     slug = slugify(data.get(CONF_NAME, ""))
     if not slug:
@@ -219,9 +372,83 @@ def validate_room(
             errors[CONF_NAME] = "name_exists"
     if not data.get(CONF_TRVS):
         errors[CONF_TRVS] = "no_trvs"
-    if float(data.get(CONF_MIN_TEMP, 0)) >= float(data.get(CONF_MAX_TEMP, 0)):
-        errors[CONF_MAX_TEMP] = "min_max"
+    if float(data.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP)) >= float(
+        data.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP)
+    ):
+        errors[SECTION_LIMITS] = "min_max"
+    if data.get(CONF_REGULATION) == REGULATION_OFFSET and data.get(
+        CONF_EXTERNAL_TEMPERATURE_ENTITIES
+    ):
+        errors[SECTION_REGULATION] = "offset_with_external"
     return errors
+
+
+def _action_targets(action: Any) -> set[str]:
+    """Entity ids an action (HA script action dict) writes to."""
+    if not isinstance(action, Mapping):
+        return set()
+    found: set[str] = set()
+    for container in (action, action.get("target"), action.get("data")):
+        if not isinstance(container, Mapping):
+            continue
+        ids = container.get("entity_id")
+        if isinstance(ids, str):
+            found.add(ids)
+        elif isinstance(ids, list):
+            found.update(str(i) for i in ids)
+    return found
+
+
+async def async_detect_plan(hass: HomeAssistant, target_entity: str) -> str | None:
+    """Id of the one Zeitwerk plan whose profile actions write target_entity.
+
+    Uses the public ``zeitwerk.get_plan`` service. None when Zeitwerk is
+    missing, the call fails, or no / several plans match.
+    """
+    if not hass.services.has_service("zeitwerk", "get_plan"):
+        return None
+    try:
+        response = await hass.services.async_call(
+            "zeitwerk", "get_plan", {}, blocking=True, return_response=True
+        )
+    except Exception as err:  # foreign integration: never block saving a room
+        _LOGGER.debug("Zeitwerk plan detection failed: %s", err)
+        return None
+    plans = response.get("plans") if isinstance(response, Mapping) else None
+    if not isinstance(plans, list):
+        return None
+    matches = {
+        str(plan["id"])
+        for plan in plans
+        if isinstance(plan, Mapping)
+        and plan.get("id")
+        and any(
+            target_entity in _action_targets(action)
+            for profile in plan.get("profiles") or []
+            if isinstance(profile, Mapping)
+            for action in profile.get("actions") or []
+        )
+    }
+    return matches.pop() if len(matches) == 1 else None
+
+
+async def _async_room_data(
+    hass: HomeAssistant, user_input: Mapping[str, Any], stored: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Flat subentry data from the submitted form.
+
+    Hidden fields keep the stored value (or their default); an empty Zeitwerk
+    plan is detected from the Zeitwerk target.
+    """
+    data = _flatten(user_input, ROOM_SECTIONS)
+    for key, default in ROOM_HIDEABLE_DEFAULTS.items():
+        if key not in data:
+            data[key] = stored.get(key, default)
+    if (target := data.get(CONF_TARGET_ENTITY)) and not data.get(CONF_ZEITWERK_PLAN):
+        data.pop(CONF_ZEITWERK_PLAN, None)
+        if plan := await async_detect_plan(hass, target):
+            data[CONF_ZEITWERK_PLAN] = plan
+    return data
 
 
 class HeizwerkConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -234,7 +461,9 @@ class HeizwerkConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """House-wide sensors and summer lock."""
         if user_input is not None:
-            return self.async_create_entry(title=NAME, data={}, options=user_input)
+            return self.async_create_entry(
+                title=NAME, data={}, options=_flatten(user_input, HUB_SECTIONS)
+            )
         return self.async_show_form(step_id="user", data_schema=_hub_schema())
 
     @staticmethod
@@ -260,11 +489,11 @@ class HeizwerkOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Single form."""
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            return self.async_create_entry(data=_flatten(user_input, HUB_SECTIONS))
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
-                _hub_schema(), self.config_entry.options
+                _hub_schema(), _nest(self.config_entry.options, HUB_SECTIONS)
             ),
         )
 
@@ -278,11 +507,12 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         """Add a new room."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            errors = validate_room(self._get_entry(), user_input)
+            errors = validate_room(
+                self._get_entry(), _flatten(user_input, ROOM_SECTIONS)
+            )
             if not errors:
-                return self.async_create_entry(
-                    title=user_input[CONF_NAME], data=user_input
-                )
+                data = await _async_room_data(self.hass, user_input, {})
+                return self.async_create_entry(title=data[CONF_NAME], data=data)
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
@@ -299,15 +529,19 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         subentry = self._get_reconfigure_subentry()
         errors: dict[str, str] = {}
         if user_input is not None:
-            errors = validate_room(entry, user_input, subentry.subentry_id)
+            errors = validate_room(
+                entry, _flatten(user_input, ROOM_SECTIONS), subentry.subentry_id
+            )
             if not errors:
+                data = await _async_room_data(self.hass, user_input, subentry.data)
                 return self.async_update_and_abort(
-                    entry, subentry, title=user_input[CONF_NAME], data=user_input
+                    entry, subentry, title=data[CONF_NAME], data=data
                 )
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
-                _room_schema(self.hass), user_input or dict(subentry.data)
+                _room_schema(self.hass),
+                user_input or _nest(subentry.data, ROOM_SECTIONS),
             ),
             errors=errors,
         )

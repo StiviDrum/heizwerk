@@ -6,14 +6,35 @@
         "description": "House-wide sensors. Add rooms afterwards with 'Add room'.",
         "data": {
           "outdoor_temperature": "Outdoor temperature",
-          "outdoor_humidity": "Outdoor humidity",
-          "season_entity": "Heating period (on = active)",
-          "summer_lock_temperature": "Summer lock from outdoor temperature",
-          "summer_lock_minutes": "Summer lock after"
+          "season_entity": "Heating period (on = active)"
         },
         "data_description": {
-          "summer_lock_temperature": "0 disables the summer lock.",
-          "season_entity": "Heating is locked while this entity is off."
+          "outdoor_temperature": "Outdoor sensor for the summer lock and the airing time. Recommended; without it there is no summer lock.",
+          "season_entity": "Heating is locked while this entity is off. Optional; without it heating is always allowed."
+        },
+        "sections": {
+          "summer_lock": {
+            "name": "Summer lock",
+            "description": "Stops heating in warm weather, independent of the heating period.",
+            "data": {
+              "summer_lock_temperature": "Summer lock from outdoor temperature",
+              "summer_lock_minutes": "Summer lock after"
+            },
+            "data_description": {
+              "summer_lock_temperature": "Locks heating when it is at least this warm outside. Default 16 °C; 0 disables the summer lock.",
+              "summer_lock_minutes": "The outdoor temperature must stay above the limit this long. Default 10 min."
+            }
+          },
+          "climate": {
+            "name": "Room climate",
+            "description": "Outdoor values for dew point and airing recommendation.",
+            "data": {
+              "outdoor_humidity": "Outdoor humidity"
+            },
+            "data_description": {
+              "outdoor_humidity": "Used for the outdoor dew point: airing is only recommended when the outside air is drier. Optional."
+            }
+          }
         }
       }
     },
@@ -27,14 +48,35 @@
         "title": "Heizwerk",
         "data": {
           "outdoor_temperature": "Outdoor temperature",
-          "outdoor_humidity": "Outdoor humidity",
-          "season_entity": "Heating period (on = active)",
-          "summer_lock_temperature": "Summer lock from outdoor temperature",
-          "summer_lock_minutes": "Summer lock after"
+          "season_entity": "Heating period (on = active)"
         },
         "data_description": {
-          "summer_lock_temperature": "0 disables the summer lock.",
-          "season_entity": "Heating is locked while this entity is off."
+          "outdoor_temperature": "Outdoor sensor for the summer lock and the airing time. Recommended; without it there is no summer lock.",
+          "season_entity": "Heating is locked while this entity is off. Optional; without it heating is always allowed."
+        },
+        "sections": {
+          "summer_lock": {
+            "name": "Summer lock",
+            "description": "Stops heating in warm weather, independent of the heating period.",
+            "data": {
+              "summer_lock_temperature": "Summer lock from outdoor temperature",
+              "summer_lock_minutes": "Summer lock after"
+            },
+            "data_description": {
+              "summer_lock_temperature": "Locks heating when it is at least this warm outside. Default 16 °C; 0 disables the summer lock.",
+              "summer_lock_minutes": "The outdoor temperature must stay above the limit this long. Default 10 min."
+            }
+          },
+          "climate": {
+            "name": "Room climate",
+            "description": "Outdoor values for dew point and airing recommendation.",
+            "data": {
+              "outdoor_humidity": "Outdoor humidity"
+            },
+            "data_description": {
+              "outdoor_humidity": "Used for the outdoor dew point: airing is only recommended when the outside air is drier. Optional."
+            }
+          }
         }
       }
     }
@@ -52,34 +94,89 @@
             "name": "Room name",
             "trvs": "Radiator thermostats",
             "temperature_sensor": "Room temperature sensor",
-            "humidity_sensor": "Humidity sensor",
-            "wall_temperature_sensor": "Wall temperature sensor",
-            "windows": "Window contacts",
-            "window_open_delay": "Window open: lock after",
-            "window_close_delay": "Window closed: release after",
             "target_entity": "Zeitwerk target (planned set-point)",
-            "zeitwerk_plan": "Zeitwerk plan",
-            "lock_entities": "Additional locks",
-            "lock_mode": "When locked",
-            "frost_temperature": "Frost protection temperature",
-            "correction": "Correction",
-            "regulation": "Regulation",
-            "external_temperature_entities": "Thermostat external temperature inputs",
             "default_target": "Set-point without Zeitwerk target",
-            "min_temp": "Minimum set-point",
-            "max_temp": "Maximum set-point",
-            "humidity_threshold": "Airing recommended from",
             "observe_only": "Observe only (send nothing to thermostats)"
           },
           "data_description": {
-            "temperature_sensor": "External sensor. Without one, the mean of the thermostats' own readings is used.",
-            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Heizwerk only reads it.",
-            "zeitwerk_plan": "Plan id, used for profile display, day band and 'until next block'.",
-            "lock_entities": "Heating is locked while one of these is on.",
-            "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K.",
-            "regulation": "Offset additionally compensates the difference between thermostat reading and room sensor.",
-            "external_temperature_entities": "e.g. number.…_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
-            "observe_only": "Heizwerk computes everything and shows what it would send, but does not touch the thermostats."
+            "name": "Shown on the card; the entity becomes climate.heizwerk_ plus the room name (e.g. climate.heizwerk_bad).",
+            "trvs": "All thermostats of the room; they all get the same set-point.",
+            "temperature_sensor": "External room sensor, strongly recommended. Without it the thermostats' own readings are averaged.",
+            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Manual overrides are written there and shown in Zeitwerk (not in observe-only mode).",
+            "default_target": "Base set-point while no Zeitwerk target is set. Default 20 °C.",
+            "observe_only": "Computes and shows the planned commands but sends nothing. Default on; keep it on while the old heating control still runs in parallel."
+          },
+          "sections": {
+            "zeitwerk": {
+              "name": "Zeitwerk",
+              "description": "Plan for profile display, day band and 'until next block'. Usually detected automatically.",
+              "data": {
+                "zeitwerk_plan": "Zeitwerk plan"
+              },
+              "data_description": {
+                "zeitwerk_plan": "Detected automatically from the Zeitwerk target when left empty. Only set it if detection finds no or several plans."
+              }
+            },
+            "room_climate": {
+              "name": "Room climate",
+              "description": "Humidity, wall temperature and airing recommendation.",
+              "data": {
+                "humidity_sensor": "Humidity sensor",
+                "wall_temperature_sensor": "Wall temperature sensor",
+                "humidity_threshold": "Airing recommended from"
+              },
+              "data_description": {
+                "humidity_sensor": "Room humidity for dew point and airing recommendation. Optional.",
+                "wall_temperature_sensor": "Coldest wall surface; gives the wall humidity (mold risk). Optional.",
+                "humidity_threshold": "Airing is recommended above this room humidity. Default 60 %; bathrooms 65–70 %."
+              }
+            },
+            "windows_locks": {
+              "name": "Windows & locks",
+              "description": "Window contacts, additional locks and what happens while heating is locked.",
+              "data": {
+                "windows": "Window contacts",
+                "window_open_delay": "Window open: lock after",
+                "window_close_delay": "Window closed: release after",
+                "lock_entities": "Additional locks",
+                "lock_mode": "When locked",
+                "frost_temperature": "Frost protection temperature"
+              },
+              "data_description": {
+                "windows": "Heating is locked while a window is open. Optional.",
+                "window_open_delay": "Delay before an open window locks heating. Default 30 s.",
+                "window_close_delay": "Delay before heating resumes after closing. Default 10 s.",
+                "lock_entities": "Heating is locked while one of these is on, e.g. a maintenance switch. Not for holidays or absence, that is Zeitwerk's job.",
+                "lock_mode": "Off relies on the thermostat's built-in frost protection (fine for Sonoff TRVZB). Default off.",
+                "frost_temperature": "Set-point while locked in frost mode. Default 7 °C."
+              }
+            },
+            "regulation": {
+              "name": "Regulation (advanced)",
+              "description": "How the set-point reaches the thermostats. Use either the external temperature input or offset, never both.",
+              "data": {
+                "correction": "Correction",
+                "regulation": "Regulation",
+                "external_temperature_entities": "Thermostat external temperature inputs"
+              },
+              "data_description": {
+                "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; use 0 with an external temperature input.",
+                "regulation": "Set-point sends target plus correction (recommended). Offset also adds thermostat reading minus room sensor; only for thermostats without external input.",
+                "external_temperature_entities": "e.g. number.…_external_temperature_input. For Sonoff TRVZB preferred: set temperature_sensor_select to external in Z2M, regulation set-point, correction 0."
+              }
+            },
+            "limits": {
+              "name": "Limits",
+              "description": "Allowed set-point range.",
+              "data": {
+                "min_temp": "Minimum set-point",
+                "max_temp": "Maximum set-point"
+              },
+              "data_description": {
+                "min_temp": "Lowest set-point Heizwerk sends. Default 5 °C.",
+                "max_temp": "Highest set-point Heizwerk sends. Default 30 °C."
+              }
+            }
           }
         },
         "reconfigure": {
@@ -88,34 +185,89 @@
             "name": "Room name",
             "trvs": "Radiator thermostats",
             "temperature_sensor": "Room temperature sensor",
-            "humidity_sensor": "Humidity sensor",
-            "wall_temperature_sensor": "Wall temperature sensor",
-            "windows": "Window contacts",
-            "window_open_delay": "Window open: lock after",
-            "window_close_delay": "Window closed: release after",
             "target_entity": "Zeitwerk target (planned set-point)",
-            "zeitwerk_plan": "Zeitwerk plan",
-            "lock_entities": "Additional locks",
-            "lock_mode": "When locked",
-            "frost_temperature": "Frost protection temperature",
-            "correction": "Correction",
-            "regulation": "Regulation",
-            "external_temperature_entities": "Thermostat external temperature inputs",
             "default_target": "Set-point without Zeitwerk target",
-            "min_temp": "Minimum set-point",
-            "max_temp": "Maximum set-point",
-            "humidity_threshold": "Airing recommended from",
             "observe_only": "Observe only (send nothing to thermostats)"
           },
           "data_description": {
-            "temperature_sensor": "External sensor. Without one, the mean of the thermostats' own readings is used.",
-            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Heizwerk only reads it.",
-            "zeitwerk_plan": "Plan id, used for profile display, day band and 'until next block'.",
-            "lock_entities": "Heating is locked while one of these is on.",
-            "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K.",
-            "regulation": "Offset additionally compensates the difference between thermostat reading and room sensor.",
-            "external_temperature_entities": "e.g. number.…_external_temperature_input (Sonoff TRVZB). Receives the room temperature.",
-            "observe_only": "Heizwerk computes everything and shows what it would send, but does not touch the thermostats."
+            "name": "Shown on the card; the entity becomes climate.heizwerk_ plus the room name (e.g. climate.heizwerk_bad).",
+            "trvs": "All thermostats of the room; they all get the same set-point.",
+            "temperature_sensor": "External room sensor, strongly recommended. Without it the thermostats' own readings are averaged.",
+            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Manual overrides are written there and shown in Zeitwerk (not in observe-only mode).",
+            "default_target": "Base set-point while no Zeitwerk target is set. Default 20 °C.",
+            "observe_only": "Computes and shows the planned commands but sends nothing. Default on; keep it on while the old heating control still runs in parallel."
+          },
+          "sections": {
+            "zeitwerk": {
+              "name": "Zeitwerk",
+              "description": "Plan for profile display, day band and 'until next block'. Usually detected automatically.",
+              "data": {
+                "zeitwerk_plan": "Zeitwerk plan"
+              },
+              "data_description": {
+                "zeitwerk_plan": "Detected automatically from the Zeitwerk target when left empty. Only set it if detection finds no or several plans."
+              }
+            },
+            "room_climate": {
+              "name": "Room climate",
+              "description": "Humidity, wall temperature and airing recommendation.",
+              "data": {
+                "humidity_sensor": "Humidity sensor",
+                "wall_temperature_sensor": "Wall temperature sensor",
+                "humidity_threshold": "Airing recommended from"
+              },
+              "data_description": {
+                "humidity_sensor": "Room humidity for dew point and airing recommendation. Optional.",
+                "wall_temperature_sensor": "Coldest wall surface; gives the wall humidity (mold risk). Optional.",
+                "humidity_threshold": "Airing is recommended above this room humidity. Default 60 %; bathrooms 65–70 %."
+              }
+            },
+            "windows_locks": {
+              "name": "Windows & locks",
+              "description": "Window contacts, additional locks and what happens while heating is locked.",
+              "data": {
+                "windows": "Window contacts",
+                "window_open_delay": "Window open: lock after",
+                "window_close_delay": "Window closed: release after",
+                "lock_entities": "Additional locks",
+                "lock_mode": "When locked",
+                "frost_temperature": "Frost protection temperature"
+              },
+              "data_description": {
+                "windows": "Heating is locked while a window is open. Optional.",
+                "window_open_delay": "Delay before an open window locks heating. Default 30 s.",
+                "window_close_delay": "Delay before heating resumes after closing. Default 10 s.",
+                "lock_entities": "Heating is locked while one of these is on, e.g. a maintenance switch. Not for holidays or absence, that is Zeitwerk's job.",
+                "lock_mode": "Off relies on the thermostat's built-in frost protection (fine for Sonoff TRVZB). Default off.",
+                "frost_temperature": "Set-point while locked in frost mode. Default 7 °C."
+              }
+            },
+            "regulation": {
+              "name": "Regulation (advanced)",
+              "description": "How the set-point reaches the thermostats. Use either the external temperature input or offset, never both.",
+              "data": {
+                "correction": "Correction",
+                "regulation": "Regulation",
+                "external_temperature_entities": "Thermostat external temperature inputs"
+              },
+              "data_description": {
+                "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; use 0 with an external temperature input.",
+                "regulation": "Set-point sends target plus correction (recommended). Offset also adds thermostat reading minus room sensor; only for thermostats without external input.",
+                "external_temperature_entities": "e.g. number.…_external_temperature_input. For Sonoff TRVZB preferred: set temperature_sensor_select to external in Z2M, regulation set-point, correction 0."
+              }
+            },
+            "limits": {
+              "name": "Limits",
+              "description": "Allowed set-point range.",
+              "data": {
+                "min_temp": "Minimum set-point",
+                "max_temp": "Maximum set-point"
+              },
+              "data_description": {
+                "min_temp": "Lowest set-point Heizwerk sends. Default 5 °C.",
+                "max_temp": "Highest set-point Heizwerk sends. Default 30 °C."
+              }
+            }
           }
         }
       },
@@ -123,7 +275,8 @@
         "invalid_name": "Please enter a name.",
         "name_exists": "A room with this name already exists.",
         "no_trvs": "Select at least one thermostat.",
-        "min_max": "Maximum must be above minimum."
+        "min_max": "Maximum must be above minimum.",
+        "offset_with_external": "Offset regulation and an external temperature input compensate twice. Use regulation 'Set-point' with the external input."
       },
       "abort": {
         "reconfigure_successful": "Room updated."
