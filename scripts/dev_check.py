@@ -451,6 +451,110 @@ async def migrate_04(api: Api) -> None:
     await asyncio.sleep(4)
 
 
+async def reconfigure_room(api: Api, title: str, change) -> dict[str, Any]:
+    """Open "reconfigure" of a room, apply change(data) to the form values, save."""
+    entry = (await entries(api, "heizwerk"))[0]["entry_id"]
+    subs = await api.ws({"type": "config_entries/subentries/list", "entry_id": entry})
+    sid = next(x["subentry_id"] for x in subs[0]["result"] if x["title"] == title)
+    flow = await api.post(
+        "/api/config/config_entries/subentries/flow",
+        {"handler": [entry, "room"], "subentry_id": sid},
+    )
+    data = form_values(flow["data_schema"])
+    change(data)
+    res = await api.post(
+        f"/api/config/config_entries/subentries/flow/{flow['flow_id']}", data
+    )
+    await asyncio.sleep(4)  # entry reload
+    return res
+
+
+async def features_check(api: Api) -> list[str]:
+    """0.5: knob at the thermostat, two-point, mold indicator."""
+    fails: list[str] = []
+
+    def check(cond: bool, msg: str) -> None:
+        print(("  ok  " if cond else "  FAIL ") + msg)
+        if not cond:
+            fails.append(msg)
+
+    bad, kue = "climate.heizwerk_bad", "climate.heizwerk_kuche"
+    await api.call("heizwerk", "resume", entity_id=bad)
+    await asyncio.sleep(40)  # Heizwerk's own commands count as echo for 30 s
+    # Knob: somebody turns TRV Bad to 20.5 -> room set-point 21.0 (+0.5 K correction)
+    await api.call(
+        "climate", "set_temperature", entity_id="climate.trv_bad", temperature=20.5
+    )
+    await asyncio.sleep(2)
+    st = await api.state(bad)
+    show("Bad nach Drehen am TRV", st, "status", "temperature", "manual_source")
+    check(st["attributes"]["temperature"] == 21.0, "Drehen am TRV: Raum-Sollwert 21,0")
+    check(
+        st["attributes"].get("manual_source") == "thermostat",
+        "Drehen am TRV: Quelle Thermostat",
+    )
+    await asyncio.sleep(12)
+    trv = await api.state("climate.trv_bad")
+    check(trv["attributes"]["temperature"] == 20.5, "TRV nicht zurückgestellt")
+    await api.call("heizwerk", "resume", entity_id=bad)
+    await asyncio.sleep(2)
+    check(
+        (await api.state(bad))["attributes"]["status"] != "manual",
+        "Fortsetzen nach Drehen",
+    )
+
+    # Two-point in the (observe-only) kitchen
+    res = await reconfigure_room(
+        api, "Küche", lambda d: d["regulation"].update(regulation="two_point")
+    )
+    check(res.get("type") == "abort", f"Küche auf Zweipunkt ({res.get('errors')})")
+    st = await api.state(kue)
+    show("Küche Zweipunkt", st, "regulation", "planned_commands")
+    cmd = st["attributes"]["planned_commands"][0]
+    check(st["attributes"]["regulation"] == "two_point", "Regelart two_point")
+    check(
+        cmd
+        == {
+            "entity_id": "climate.trv_kueche",
+            "hvac_mode": "heat",
+            "temperature": 24.0,
+        },
+        "Zweipunkt: geplant heizen auf 24 °C",
+    )
+    await reconfigure_room(
+        api,
+        "Küche",
+        lambda d: d["regulation"].update(regulation="offset", send_temperature=False),
+    )
+
+    # Mold indicator in the bathroom
+    res = await reconfigure_room(
+        api,
+        "Bad",
+        lambda d: d["room_climate"].update(mold_sensor="sensor.schimmel_bad"),
+    )
+    check(
+        res.get("type") == "abort", f"Bad mit Schimmel-Indikator ({res.get('errors')})"
+    )
+    st = await api.state(bad)
+    a = st["attributes"]
+    show(
+        "Bad Wand",
+        st,
+        "wall_source",
+        "wall_humidity",
+        "wall_critical_temperature",
+        "mold_level",
+    )
+    check(a.get("wall_source") == "indicator", "Wandfeuchte aus Indikator")
+    check(
+        a.get("wall_humidity") == 74 and a.get("wall_critical_temperature") == 16.3,
+        "74 % / kritisch 16,3 °C",
+    )
+    check(a.get("mold_level") == "warning", "Schimmel-Ampel Achtung")
+    return fails
+
+
 async def setup(api: Api) -> None:
     """Zeitwerk + plan, Heizwerk + rooms (idempotent)."""
     if not await entries(api, "zeitwerk"):
@@ -1100,6 +1204,8 @@ async def main() -> int:
         fails += await direct_plan_check(api)
         print("Scenarios:")
         fails += await scenarios(api)
+        print("0.5 Funktionen:")
+        fails += await features_check(api)
         if SHOTS:
             print("Screenshots:")
             fails += await screenshots(api, session, tok)

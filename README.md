@@ -18,9 +18,15 @@ sensor, locks, manual override and room-climate hints.
   from an external sensor (fallback: mean of the TRV readings); any scheduler
   (Zeitwerk, Scheduler, automation) sets it with `climate.set_temperature`.
   Works without a scheduler, too.
-- Correction (e.g. −0.5 K), *set-point* or *offset* regulation, 10 s debounce,
-  only differing commands are sent, optional push of the room temperature to the
-  TRV's external-temperature input (e.g. Sonoff TRVZB).
+- Regulation *set-point* (default – with Sonoff TRVZB the thermostat regulates
+  itself on the room temperature Heizwerk sends to its external input), *offset*
+  (thermostats without external input) or *two-point* (valve fully open at e.g.
+  24 °C or off, with hysteresis – like a classic heating automation). 10 s
+  debounce, only differing commands are sent.
+- **Room temperature to the thermostats**: one switch – Heizwerk finds each
+  TRVZB's `…_external_temperature_input` itself and warns (repair issue) if a
+  thermostat no longer measures with `remote_temperature`.
+- **Knob at the thermostat** counts as manual override (or is reset, per room).
 - **Locks**: window open (delays), heating period off, summer lock (outdoor ≥
   16 °C for 10 min), any extra lock entity. Locked = thermostat off (frost
   protection in the device) or heat to a frost temperature.
@@ -28,8 +34,9 @@ sensor, locks, manual override and room-climate hints.
   or for 1 h / 3 h; **Resume** runs a configurable action (default with a
   Zeitwerk plan: `zeitwerk.resume`; for Scheduler e.g. `scheduler.run_action`)
   and reloads the plan. Zeitwerk shows Heizwerk overrides as manual changes.
-- **Room climate**: dew point, wall humidity with mold level, airing
-  recommendation and "aired enough" event.
+- **Room climate**: dew point, wall humidity with mold level (from a wall
+  temperature sensor or directly from a mold indicator), airing recommendation
+  and "aired enough" event.
 - **Card** `custom:heizwerk-card`, registered automatically – standard room card
   and compact tile / house list, light and dark theme, German and English.
 

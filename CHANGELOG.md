@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.0 – 2026-11-18
+
+Everything needed to retire the old heating automations.
+
+- **Send room temperature to the thermostats** (one switch): Heizwerk finds the
+  external temperature input (`number.…_external_temperature_input`, Sonoff
+  TRVZB) on each thermostat's device itself; only with a room sensor. Rooms with
+  explicit inputs from older versions keep them.
+- **Two-point regulation** (option; default stays "set-point", the TRVZB
+  regulates itself with the external value): valve heats at a fixed value
+  (default 24 °C) or is off, hysteresis low/high; needs a room sensor; state
+  survives restarts.
+- **Outdoor limit per room** (optional, overrides the house value; 0 = no summer
+  lock for this room).
+- **Measuring-source notice**: repair issue when a thermostat's
+  `…_temperature_sensor_select` is not `remote_temperature` for 5 minutes
+  (restarts ignored). Heizwerk never switches it itself.
+- **Knob at the thermostat** = manual override (or "reset" per room). Echoes of
+  Heizwerk's own commands, automation writes, locks and devices coming back are
+  ignored; several clicks in a row are adopted as one.
+- **Mold indicator** (e.g. HA's mold indicator) as wall-humidity source with its
+  critical wall temperature; the wall temperature field only accepts °C/°F.
+- Card: "critical below …", "at the thermostat", "two-point", warning when the
+  room sensor is missing while thermostats use its value.
+- Independent review (separate review agent): 14 findings + 1 follow-up fixed
+  before release, each with a regression test.
+
 ## 0.4.0 – 2026-11-18
 
 **Breaking – simpler interface.** A scheduler (Zeitwerk, Scheduler, automation)

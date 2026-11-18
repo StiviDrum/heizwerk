@@ -153,6 +153,17 @@ Sperre = `hvac_mode: off` (`lock_mode: off`) bzw. heat auf `frost_temperature`.
 - Lüften empfohlen: Feuchte ≥ `humidity_threshold` und (Taupunkt außen unbekannt
   oder ≥ 1 K unter Taupunkt innen) und Fenster zu.
 
+### 4.5 Ab 0.5 (Ablösung der Heizungs-Automationen)
+
+| Funktion | Verhalten |
+|---|---|
+| Raumtemperatur senden (`send_temperature`) | Eingänge `number.…_external_temperature_input` am Gerät jedes TRV (entity_id/unique_id), Wert des Raumfühlers bei ≥ 0,1 K Änderung, sonst alle 30 min. Nur mit Raumfühler, nicht bei „Nur beobachten“. Alte explizite Eingänge bleiben, solange Senden an ist. Ohne gespeicherten Schlüssel: an, wenn alte Eingänge existieren. |
+| Messquelle (`…_temperature_sensor_select`) | Reparaturhinweis `sensor_select_not_remote` nach 5 min ≠ `remote_temperature` (nicht verfügbar/unbekannt zählen nicht). Kein automatisches Umstellen. |
+| Zweipunkt (`regulation: two_point`) | an bei Ist < Soll − `hysteresis_low`, aus ab Ist ≥ Soll + `hysteresis_high`, dazwischen wie zuvor; an = heat auf `heat_setpoint` (24 °C), aus = off. Nur mit Raumfühler, Summe Hysterese ≥ 0,2 K. Zustand nach Neustart aus den TRVs. |
+| Außengrenze pro Raum (`outdoor_limit`) | ersetzt den Hauswert; 0 = keine Sommerabschaltung für den Raum. |
+| Drehen am Thermostat (`trv_manual`) | `adopt`: Sollwertänderung am TRV = manuelle Übersteuerung (Rückrechnung Korrektur/Offset; bei Zweipunkt als Differenz). Kein Drehen: Echo eigener Befehle (gleicher Wert innerhalb 30 s), Moduswechsel durch eigenen Befehl, Kontext mit Elternteil (Automation/Skript), Sperre aktiv, Raum aus, TRV gerade wieder verfügbar, „Nur beobachten“. `reset`: Heizwerk stellt zurück. |
+| Schimmel-Indikator (`mold_sensor`) | Wert = Wandfeuchte (%), `estimated_critical_temp` = kritische Wandtemperatur; hat Vorrang vor dem Wandtemperatur-Sensor (der nur °C/°F akzeptiert). |
+
 ## 5. Entitäten pro Raum (Gerät „Heizwerk <Raum>“)
 
 | Entität | Inhalt |
@@ -166,6 +177,8 @@ Sperre = `hvac_mode: off` (`lock_mode: off`) bzw. heat auf `frost_temperature`.
 Attribute von `climate.heizwerk_<raum>` (Schnittstelle zur Karte):
 
 `room_name`, `status`, `locks` [{type, entity_id?, since}], `resume_available`,
+`regulation`, `external_inputs`, `wall_source`, `wall_critical_temperature`,
+`manual_source` (`heizwerk`/`thermostat`/`zeitwerk`),
 `ignored_entities`, `manual_target`, `manual_until`, `manual_mode` (`until_next`/`duration`),
 `manual_by`, `zeitwerk_plan`, `zeitwerk_profile`,
 `next_change`, `next_profile`, `temperature_source` (`sensor`/`trv`),
