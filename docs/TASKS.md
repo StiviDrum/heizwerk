@@ -30,7 +30,7 @@ Stand nach jeder Aufgabe aktualisieren. Branch: `claude/heizwerk-0.1`.
 ## Offen / später
 - [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bewusst nicht in 0.1
 - [ ] Brand-Icons (`custom_components/heizwerk/brand/`)
-- [ ] Release 0.1.0 taggen – erst nach Stevens Freigabe
+- [x] Release 0.1.0 getaggt (Freigabe Steven 2026-11-18)
 - [ ] Produktiv-Einsatz: nur nach Freigabe (Hausregeln 1.4), zuerst „Nur beobachten“ parallel zu den bestehenden Automationen
 
 ## Erkenntnisse

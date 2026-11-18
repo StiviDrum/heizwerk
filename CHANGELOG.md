@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 – unreleased
+## 0.1.0 – 2026-11-18
 
 - Integration `heizwerk` (HA ≥ 2026.11): one entry with house options, rooms as
   config subentries ("Add room").
