@@ -40,6 +40,8 @@ CONF_WINDOW_OPEN_DELAY: Final = "window_open_delay"
 CONF_WINDOW_CLOSE_DELAY: Final = "window_close_delay"
 CONF_TARGET_ENTITY: Final = "target_entity"
 CONF_ZEITWERK_PLAN: Final = "zeitwerk_plan"
+# Actions (script syntax) run on "resume" and when a timed override ends.
+CONF_RESUME_ACTION: Final = "resume_action"
 CONF_LOCK_ENTITIES: Final = "lock_entities"
 CONF_LOCK_MODE: Final = "lock_mode"
 CONF_FROST_TEMPERATURE: Final = "frost_temperature"

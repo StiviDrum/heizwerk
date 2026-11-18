@@ -33,11 +33,13 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_point_in_utc_time,
     async_track_state_change_event,
 )
+from homeassistant.helpers.script import Script
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util, slugify
 import voluptuous as vol
@@ -58,6 +60,7 @@ from .const import (
     CONF_OUTDOOR_HUMIDITY,
     CONF_OUTDOOR_TEMPERATURE,
     CONF_REGULATION,
+    CONF_RESUME_ACTION,
     CONF_SEASON_ENTITY,
     CONF_SUMMER_LOCK_MINUTES,
     CONF_SUMMER_LOCK_TEMPERATURE,
@@ -79,6 +82,7 @@ from .const import (
     DEFAULT_TARGET,
     DEFAULT_WINDOW_CLOSE_DELAY,
     DEFAULT_WINDOW_OPEN_DELAY,
+    DOMAIN,
     EVENT,
     EVENT_TRV_UNAVAILABLE,
     EVENT_VENTILATION_DONE,
@@ -91,6 +95,7 @@ from .const import (
     RESYNC_MINUTES,
     TRV_UNAVAILABLE_EVENT_MINUTES,
 )
+from .helpers import is_heizwerk_entity
 from .logic import (
     HVAC_OFF,
     LOCK_ENTITY,
@@ -131,16 +136,17 @@ def _iso(value: datetime | None) -> str | None:
 
 @dataclass(slots=True)
 class ManualOverride:
-    """A manual set-point that temporarily replaces the planned one."""
+    """A set-point changed by hand (Heizwerk card / heizwerk.set_manual).
+
+    The value itself is the room's set-point; this only remembers that it is
+    manual, who set it and until when. It ends with the next value from the
+    scheduler (climate.set_temperature), with "resume" or after its duration.
+    """
 
     target: float
     mode: str
     until: datetime | None
-    reference: float | None
     by: str | None = None
-    # True: the value was written to the Zeitwerk target, so Zeitwerk shows
-    # (and ends) the override itself; Heizwerk only keeps who/how long.
-    zeitwerk: bool = False
     resume_sent: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -149,23 +155,21 @@ class ManualOverride:
             "target": self.target,
             "mode": self.mode,
             "until": _iso(self.until),
-            "reference": self.reference,
             "by": self.by,
-            "zeitwerk": self.zeitwerk,
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ManualOverride | None:
-        """Restore; None if the data is incomplete."""
+        """Restore; None if the data is incomplete or from the 0.2/0.3 model."""
+        if data.get("zeitwerk"):
+            return None
         try:
             until = data.get("until")
             return cls(
                 target=float(data["target"]),
                 mode=str(data["mode"]),
                 until=dt_util.parse_datetime(until) if until else None,
-                reference=_float(data.get("reference")),
                 by=data.get("by"),
-                zeitwerk=bool(data.get("zeitwerk", False)),
             )
         except KeyError, TypeError, ValueError:
             return None
@@ -188,14 +192,36 @@ class RoomController:
         self.hub_config = dict(hub)
         self.name: str = room[CONF_NAME]
         self.slug = slugify(self.name)
-        self.trv_ids: list[str] = list(room.get(CONF_TRVS, []))
+        # Never follow / control Heizwerk's own entities (endless loop).
+        self.ignored_entities: list[str] = [
+            e
+            for e in room.get(CONF_TRVS, [])
+            if is_heizwerk_entity(hass, e)
+            or e == f"climate.heizwerk_{slugify(room[CONF_NAME])}"
+        ]
+        self.trv_ids: list[str] = [
+            e for e in room.get(CONF_TRVS, []) if e not in self.ignored_entities
+        ]
         self.window_ids: list[str] = list(room.get(CONF_WINDOWS, []))
         self.lock_ids: list[str] = list(room.get(CONF_LOCK_ENTITIES, []))
         self.external_ids: list[str] = list(
             room.get(CONF_EXTERNAL_TEMPERATURE_ENTITIES, [])
         )
-        self.target_entity: str | None = room.get(CONF_TARGET_ENTITY) or None
+        if self.ignored_entities:
+            _LOGGER.warning(
+                "%s: ignoring Heizwerk's own entities %s as thermostats "
+                "(Heizwerk would control itself)",
+                room.get(CONF_NAME),
+                self.ignored_entities,
+            )
+        # Up to 0.3 a room could follow a "Zeitwerk target" entity. Since 0.4
+        # the scheduler writes climate.set_temperature to the room directly;
+        # an old value is ignored (repair issue, see __init__.py).
+        self.legacy_target: str | None = room.get(CONF_TARGET_ENTITY) or None
         self.plan: str | None = room.get(CONF_ZEITWERK_PLAN) or None
+        self.resume_action: list[dict[str, Any]] = list(
+            room.get(CONF_RESUME_ACTION) or []
+        )
         self.min_temp = float(room.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP))
         self.max_temp = float(room.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP))
         self.observe_only: bool = bool(room.get(CONF_OBSERVE_ONLY, True))
@@ -206,7 +232,6 @@ class RoomController:
         self.enabled = True
         self.base_target = float(room.get(CONF_DEFAULT_TARGET, DEFAULT_TARGET))
         self.manual: ManualOverride | None = None
-        self.last_scheduled: float | None = None
 
         # Derived state.
         self.decision: Decision | None = None
@@ -229,6 +254,7 @@ class RoomController:
         self._debounce: CALLBACK_TYPE | None = None
         self._started = False
         self._sending = False
+        self._tracker: CALLBACK_TYPE | None = None
 
     # --- Configuration helpers --------------------------------------------
 
@@ -251,7 +277,6 @@ class RoomController:
             self.config.get(CONF_TEMPERATURE_SENSOR),
             self.config.get(CONF_HUMIDITY_SENSOR),
             self.config.get(CONF_WALL_TEMPERATURE_SENSOR),
-            self.target_entity,
             self.hub_config.get(CONF_OUTDOOR_TEMPERATURE),
             self.hub_config.get(CONF_OUTDOOR_HUMIDITY),
             self.hub_config.get(CONF_SEASON_ENTITY),
@@ -281,7 +306,6 @@ class RoomController:
             self.base_target = base
         if manual := data.get("manual"):
             self.manual = ManualOverride.from_dict(manual)
-        self.last_scheduled = _float(data.get("last_scheduled"))
 
     def restore_data(self) -> dict[str, Any]:
         """Runtime state to persist across restarts."""
@@ -289,7 +313,6 @@ class RoomController:
             "enabled": self.enabled,
             "base_target": self.base_target,
             "manual": self.manual.as_dict() if self.manual else None,
-            "last_scheduled": self.last_scheduled,
         }
 
     @callback
@@ -298,11 +321,7 @@ class RoomController:
         if self._started:
             return
         self._started = True
-        self._unsubs.append(
-            async_track_state_change_event(
-                self.hass, self.tracked_entities(), self._async_state_changed
-            )
-        )
+        self._subscribe()
         now = dt_util.utcnow()
         if self._is_window_open():
             # Open since before the start: count from now, lock immediately.
@@ -314,6 +333,28 @@ class RoomController:
     @callback
     def _async_hass_started(self, _hass: HomeAssistant) -> None:
         self.async_update()
+        if not self.plan:
+            self.hass.async_create_task(
+                self._async_detect_plan(), f"heizwerk detect plan {self.name}"
+            )
+
+    def _subscribe(self) -> None:
+        if self._tracker:
+            self._tracker()
+        self._tracker = async_track_state_change_event(
+            self.hass, self.tracked_entities(), self._async_state_changed
+        )
+
+    async def _async_detect_plan(self) -> None:
+        """Find the Zeitwerk plan that writes this room (for display only)."""
+        from .config_flow import async_detect_plan  # noqa: PLC0415
+
+        plan = await async_detect_plan(self.hass, self.climate_entity_id)
+        if plan and self._started:
+            _LOGGER.debug("%s: Zeitwerk plan %s detected", self.name, plan)
+            self.plan = plan
+            self._subscribe()
+            self.async_update()
 
     @callback
     def async_stop(self) -> None:
@@ -321,6 +362,9 @@ class RoomController:
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        if self._tracker:
+            self._tracker()
+            self._tracker = None
         self._cancel_wakeup()
         if self._debounce:
             self._debounce()
@@ -377,42 +421,10 @@ class RoomController:
             )
         return infos
 
-    def scheduled_target(self) -> float | None:
-        """Planned set-point from the Zeitwerk target entity (None = no source)."""
-        if not self.target_entity:
-            return None
-        state = self._state(self.target_entity)
-        if state is None:
-            return self.last_scheduled
-        if self.target_entity.startswith("climate."):
-            value = _float(state.attributes.get(ATTR_TEMPERATURE))
-        else:
-            value = _float(state.state)
-        if value is None:
-            return self.last_scheduled
-        self.last_scheduled = value
-        return value
-
-    def zeitwerk_next_change(self) -> datetime | None:
-        """Next profile change of the linked Zeitwerk plan."""
-        state = self._state(self.zeitwerk_next_entity)
-        if state is None or state.state in _INVALID:
-            return None
-        return dt_util.parse_datetime(state.state)
-
     def _clamp(self, value: float) -> float:
         return max(self.min_temp, min(self.max_temp, value))
 
-    # --- Manual override / commands from entities and services -----------
-
-    @property
-    def zeitwerk_linked(self) -> bool:
-        """Manual overrides go through the Zeitwerk target (visible in Zeitwerk).
-
-        Not in observe-only mode: the target may still feed the existing
-        heating control, so Heizwerk must not change it then.
-        """
-        return bool(self.target_entity and self.plan and not self.observe_only)
+    # --- Set-point, manual override, resume -----------------------------------
 
     def zeitwerk_manual(self) -> tuple[bool, datetime | None]:
         """Whether Zeitwerk reports a manual override of the plan, and its end."""
@@ -422,113 +434,67 @@ class RoomController:
         until = state.attributes.get("manual_until")
         return True, dt_util.parse_datetime(until) if until else None
 
-    async def async_set_manual(
-        self,
-        temperature: float,
-        duration: timedelta | None,
-        user_name: str | None = None,
-        context: Context | None = None,
-    ) -> None:
-        """Override the planned set-point (until next change or for a duration)."""
-        now = dt_util.utcnow()
-        value = self._clamp(temperature)
-        previous = self.manual
-        if previous is not None and previous.zeitwerk:
-            # Keep the plan value from before the first override.
-            reference = previous.reference
-        else:
-            reference = self.scheduled_target()
-        if duration is not None:
-            mode, until = MANUAL_DURATION, now + duration
-        else:
-            next_change = self.zeitwerk_next_change()
-            mode = MANUAL_UNTIL_NEXT
-            until = next_change if next_change and next_change > now else None
-        self.enabled = True
-        if self.zeitwerk_linked:
-            if reference is not None and abs(value - reference) < 1e-6:
-                # Back to the plan value: that is a resume, not an override.
-                await self.async_resume()
-                return
-            if await self._async_write_target(value, context):
-                self.manual = ManualOverride(
-                    value,
-                    mode,
-                    until if mode == MANUAL_DURATION else None,
-                    reference,
-                    user_name,
-                    zeitwerk=True,
-                )
-                self.async_update()
-                return
-        self.manual = ManualOverride(value, mode, until, reference, user_name)
-        self.async_update()
+    @property
+    def resume_actions(self) -> list[dict[str, Any]]:
+        """Configured resume action, else zeitwerk.resume for the known plan."""
+        if self.resume_action:
+            return self.resume_action
+        if self.plan:
+            return [{"action": "zeitwerk.resume", "data": {"plan": [self.plan]}}]
+        return []
 
-    async def async_set_target(
-        self,
-        temperature: float,
-        user_name: str | None = None,
-        context: Context | None = None,
-    ) -> None:
-        """climate.set_temperature: manual override with a plan, else new base."""
-        if self.target_entity:
-            await self.async_set_manual(temperature, None, user_name, context)
-            return
+    @property
+    def resume_available(self) -> bool:
+        """Whether "resume" can reload a plan."""
+        return bool(self.resume_actions)
+
+    def set_target(self, temperature: float) -> None:
+        """climate.set_temperature: the new set-point (scheduler, automation …).
+
+        Ends a manual override: the scheduler delivered its next value.
+        """
         self.base_target = self._clamp(temperature)
         self.manual = None
         self.async_update()
 
-    async def async_resume(self) -> None:
-        """End a manual override (in Zeitwerk too, when linked)."""
-        manual = self.manual
-        zeitwerk_active, _ = self.zeitwerk_manual()
-        self.manual = None
-        if self.zeitwerk_linked and (
-            zeitwerk_active or (manual is not None and manual.zeitwerk)
-        ):
-            await self._async_zeitwerk_resume(manual)
+    def set_manual(
+        self,
+        temperature: float,
+        duration: timedelta | None,
+        user_name: str | None = None,
+    ) -> None:
+        """Set the set-point by hand (Heizwerk card, heizwerk.set_manual)."""
+        now = dt_util.utcnow()
+        self.base_target = self._clamp(temperature)
+        if duration is not None and self.resume_available:
+            mode, until = MANUAL_DURATION, now + duration
+        else:
+            # Without a resume action a duration could not restore anything.
+            mode, until = MANUAL_UNTIL_NEXT, None
+        self.manual = ManualOverride(self.base_target, mode, until, user_name)
+        self.enabled = True
         self.async_update()
 
-    async def _async_write_target(self, value: float, context: Context | None) -> bool:
-        """Write a manual value to the Zeitwerk target; False if that failed."""
-        entity_id = self.target_entity
-        assert entity_id is not None
-        domain = entity_id.split(".", 1)[0]
-        if domain == "climate":
-            service, data = "set_temperature", {ATTR_TEMPERATURE: value}
-        elif domain in ("input_number", "number"):
-            service, data = "set_value", {"value": value}
-        else:
-            return False
-        try:
-            await self.hass.services.async_call(
-                domain,
-                service,
-                {ATTR_ENTITY_ID: entity_id, **data},
-                blocking=True,
-                context=context,
-            )
-        except (HomeAssistantError, vol.Invalid) as err:
-            _LOGGER.warning(
-                "%s: could not write %s to %s, override stays in Heizwerk: %s",
-                self.name,
-                value,
-                entity_id,
-                err,
-            )
-            return False
-        return True
+    async def async_resume(self) -> None:
+        """End a manual override and reload the plan (resume action)."""
+        self.manual = None
+        self.async_update()
+        await self._async_run_resume()
 
-    async def _async_zeitwerk_resume(self, manual: ManualOverride | None) -> None:
-        """Let Zeitwerk end its override and re-apply the plan."""
+    async def _async_run_resume(self) -> None:
+        actions = self.resume_actions
+        if not actions:
+            return
         try:
-            await self.hass.services.async_call(
-                "zeitwerk", "resume", {"plan": [self.plan]}, blocking=True
+            script = Script(
+                self.hass,
+                cv.SCRIPT_SCHEMA(actions),
+                f"Heizwerk {self.name} resume",
+                DOMAIN,
             )
+            await script.async_run(context=Context())
         except (HomeAssistantError, vol.Invalid) as err:
-            _LOGGER.warning("%s: zeitwerk.resume failed: %s", self.name, err)
-            if manual is not None and manual.reference is not None:
-                await self._async_write_target(manual.reference, None)
+            _LOGGER.warning("%s: resume action failed: %s", self.name, err)
 
     def set_enabled(self, enabled: bool) -> None:
         """hvac_mode heat/off of the room."""
@@ -602,36 +568,17 @@ class RoomController:
         )
         return now - self.summer_since >= timedelta(minutes=minutes)
 
-    def _expire_manual(self, now: datetime, scheduled: float | None) -> None:
+    def _expire_manual(self, now: datetime) -> None:
         manual = self.manual
-        if manual is None:
+        if manual is None or manual.until is None or now < manual.until:
             return
-        if manual.zeitwerk:
-            if scheduled is not None and abs(scheduled - manual.target) > 1e-6:
-                # Zeitwerk (next block, resume, override) or someone else
-                # changed the target: our override is over.
-                self.manual = None
-            elif (
-                manual.until is not None
-                and now >= manual.until
-                and not manual.resume_sent
-            ):
-                manual.resume_sent = True
-                self.hass.async_create_task(
-                    self._async_zeitwerk_resume(manual),
-                    f"heizwerk resume {self.plan}",
-                )
+        if manual.resume_sent:
             return
-        if manual.until is not None and now >= manual.until:
-            self.manual = None
-        elif (
-            manual.mode == MANUAL_UNTIL_NEXT
-            and scheduled is not None
-            and manual.reference is not None
-            and abs(scheduled - manual.reference) > 1e-6
-        ):
-            # Zeitwerk switched to another set-point: the next block started.
-            self.manual = None
+        manual.resume_sent = True
+        self.manual = None
+        self.hass.async_create_task(
+            self._async_run_resume(), f"heizwerk resume {self.name}"
+        )
 
     def _room_temperature(self, trvs: list[TrvInfo]) -> tuple[float | None, str]:
         sensor = self._number(self.config.get(CONF_TEMPERATURE_SENSOR))
@@ -645,22 +592,10 @@ class RoomController:
         """Recompute everything, notify entities, schedule commands/timers."""
         now = dt_util.utcnow()
         trvs = self._trv_infos()
-        scheduled = self.scheduled_target()
-        self._expire_manual(now, scheduled)
-        planned = scheduled if scheduled is not None else self.base_target
+        self._expire_manual(now)
+        target = self.base_target
         zeitwerk_manual, _ = self.zeitwerk_manual()
-        if self.manual is not None and self.manual.zeitwerk:
-            # The target already holds the manual value; show the plan value.
-            target = planned
-            if self.manual.reference is not None:
-                planned = self.manual.reference
-        elif self.manual is not None:
-            target = self.manual.target
-        else:
-            target = planned
-        manual_active = self.manual is not None or (
-            zeitwerk_manual and self.target_entity is not None
-        )
+        manual_active = self.manual is not None or zeitwerk_manual
         current, source = self._room_temperature(trvs)
         locks = self._locks(now)
 
@@ -689,7 +624,7 @@ class RoomController:
         self.planned = decision.commands
 
         self._update_trv_availability(now, trvs)
-        self._update_climate(now, current, source, trvs, planned, locks)
+        self._update_climate(now, current, source, trvs, locks)
         self._push_external(now, current, source)
 
         pending = pending_commands(decision.commands, trvs)
@@ -833,13 +768,12 @@ class RoomController:
             },
         )
 
-    def _update_climate(  # noqa: PLR0917
+    def _update_climate(
         self,
         now: datetime,
         current: float | None,
         source: str,
         trvs: list[TrvInfo],
-        planned: float,
         locks: list[str],
     ) -> None:
         humidity = self._number(self.config.get(CONF_HUMIDITY_SENSOR))
@@ -893,9 +827,9 @@ class RoomController:
                 )
                 for lock in locks
             ],
-            "scheduled_target": planned,
             **self._manual_attributes(),
-            "target_entity": self.target_entity,
+            "resume_available": self.resume_available,
+            "ignored_entities": self.ignored_entities,
             "zeitwerk_plan": self.plan,
             "zeitwerk_profile": profile.state
             if profile and profile.state not in _INVALID
@@ -942,34 +876,32 @@ class RoomController:
         }
 
     def _manual_attributes(self) -> dict[str, Any]:
-        """manual_* attributes, also for overrides started in Zeitwerk."""
+        """manual_* attributes, also for overrides Zeitwerk detected itself."""
         zeitwerk_active, zeitwerk_until = self.zeitwerk_manual()
         manual = self.manual
         if manual is not None:
             until = manual.until
-            if manual.zeitwerk and manual.mode == MANUAL_UNTIL_NEXT:
+            if until is None and zeitwerk_active:
                 until = zeitwerk_until
             return {
                 "manual_target": manual.target,
                 "manual_mode": manual.mode,
                 "manual_until": _iso(until),
                 "manual_by": manual.by,
-                "manual_source": "zeitwerk" if manual.zeitwerk else "heizwerk",
             }
-        if zeitwerk_active and self.target_entity:
+        if zeitwerk_active:
+            # Changed outside the Heizwerk card (more-info dialog, voice …).
             return {
-                "manual_target": self.scheduled_target(),
+                "manual_target": self.base_target,
                 "manual_mode": MANUAL_UNTIL_NEXT,
                 "manual_until": _iso(zeitwerk_until),
                 "manual_by": None,
-                "manual_source": "zeitwerk",
             }
         return {
             "manual_target": None,
             "manual_mode": None,
             "manual_until": None,
             "manual_by": None,
-            "manual_source": None,
         }
 
     # --- Timers ---------------------------------------------------------------

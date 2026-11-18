@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.data_entry_flow import (
     FlowResultType,
+    InvalidData,
     add_visible_conditions_to_serialized_schema,
     section,
 )
@@ -31,14 +32,29 @@ from custom_components.heizwerk.config_flow import (
 )
 from custom_components.heizwerk.const import DOMAIN, SUBENTRY_ROOM
 
-from .conftest import TARGET, room_data
+from .conftest import room_data
+
+CLIMATE = "climate.heizwerk_bad"
+RESUME = [
+    {
+        "action": "scheduler.run_action",
+        "target": {"entity_id": "switch.schedule_bad"},
+    }
+]
 
 TRANSLATIONS = Path(__file__).parents[1] / "custom_components/heizwerk/translations"
 
 
+def flat_room(**overrides: Any) -> dict[str, Any]:
+    """Room data of 0.4 (no Zeitwerk target any more)."""
+    data = room_data(**overrides)
+    data.pop("target_entity", None)
+    return data
+
+
 def nested_room(**overrides: Any) -> dict[str, Any]:
     """Room data as the sectioned form submits it."""
-    return _nest(room_data(**overrides), ROOM_SECTIONS)
+    return _nest(flat_room(**overrides), ROOM_SECTIONS)
 
 
 def _without(data: dict[str, Any], *keys: str) -> dict[str, Any]:
@@ -80,13 +96,17 @@ def _suggested(schema: probatio.Schema) -> dict[str, Any]:
 
 
 def test_flatten_nest_round_trip() -> None:
-    flat = room_data(zeitwerk_plan="heizung_bad")
+    flat = flat_room(zeitwerk_plan="heizung_bad", resume_action=RESUME)
     nested = _nest(flat, ROOM_SECTIONS)
     assert nested["regulation"] == {
         "correction": -0.5,
         "regulation": "setpoint",
     }
-    assert nested["zeitwerk"] == {"zeitwerk_plan": "heizung_bad"}
+    assert nested["schedule"] == {
+        "zeitwerk_plan": "heizung_bad",
+        "resume_action": RESUME,
+    }
+    assert nested["limits"]["default_target"] == 22.0
     assert "correction" not in nested
     assert nested["name"] == "Bad"
     assert _flatten(nested, ROOM_SECTIONS) == flat
@@ -164,7 +184,7 @@ async def test_options_flow(hass: HomeAssistant, house) -> None:
 
 async def test_room_subentry_create_and_reconfigure(hass: HomeAssistant, house) -> None:
     entry = await _hub_entry(hass)
-    data = _without(nested_room(observe_only=True), "target_entity")
+    data = nested_room(observe_only=True)
     result = await _add_room(hass, entry, data)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -172,7 +192,7 @@ async def test_room_subentry_create_and_reconfigure(hass: HomeAssistant, house) 
     subentry_id = next(iter(entry.subentries))
     stored = dict(entry.subentries[subentry_id].data)
     # Stored flat, same keys as before sections existed.
-    assert stored == _without(room_data(observe_only=True), "target_entity")
+    assert stored == flat_room(observe_only=True)
 
     # Duplicate name rejected
     result = await _add_room(hass, entry, data)
@@ -194,85 +214,140 @@ async def test_room_subentry_create_and_reconfigure(hass: HomeAssistant, house) 
 async def test_reconfigure_shows_stored_values_in_sections(
     hass: HomeAssistant, house
 ) -> None:
-    """A 0.2-style flat subentry sets up and is shown inside the sections."""
-    flat = room_data(zeitwerk_plan="heizung_bad", lock_mode="frost")
+    """A 0.2-style flat subentry sets up and is shown inside the sections.
+
+    Its legacy Zeitwerk target is not offered any more and dropped on save.
+    """
+    legacy = room_data(
+        zeitwerk_plan="heizung_bad",
+        lock_mode="frost",
+        target_entity="input_number.temperaturspeicher_bad",
+    )
     entry = await _hub_entry(
         hass,
         subentries_data=[
             ConfigSubentryData(
-                data=flat, subentry_type=SUBENTRY_ROOM, title="Bad", unique_id=None
+                data=legacy, subentry_type=SUBENTRY_ROOM, title="Bad", unique_id=None
             )
         ],
     )
     assert entry.state is config_entries.ConfigEntryState.LOADED
-    assert hass.states.get("climate.heizwerk_bad") is not None
+    assert hass.states.get(CLIMATE) is not None
     subentry_id = next(iter(entry.subentries))
 
     result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
     suggested = _suggested(result["data_schema"])
     assert suggested["name"] == "Bad"
-    assert suggested["target_entity"] == TARGET
-    assert suggested["zeitwerk"] == {"zeitwerk_plan": "heizung_bad"}
+    assert "target_entity" not in suggested
+    assert suggested["schedule"] == {"zeitwerk_plan": "heizung_bad"}
     assert suggested["regulation"]["correction"] == -0.5
     assert suggested["windows_locks"]["lock_mode"] == "frost"
     assert suggested["windows_locks"]["frost_temperature"] == 7.0
-    assert suggested["limits"] == {"min_temp": 5.0, "max_temp": 30.0}
+    assert suggested["limits"] == {
+        "default_target": 22.0,
+        "min_temp": 5.0,
+        "max_temp": 30.0,
+    }
     assert "correction" not in suggested
 
-    # Submitting the shown values unchanged keeps the data identical.
+    # Submitting the shown values unchanged keeps everything but the target.
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], _nest(flat, ROOM_SECTIONS)
+        result["flow_id"], _nest(_without(legacy, "target_entity"), ROOM_SECTIONS)
     )
     assert result["reason"] == "reconfigure_successful"
     await hass.async_block_till_done()
-    assert dict(entry.subentries[subentry_id].data) == flat
+    stored = dict(entry.subentries[subentry_id].data)
+    assert "target_entity" not in stored
+    assert stored == _without(legacy, "target_entity")
+
+
+async def test_legacy_target_entity_dropped(hass: HomeAssistant, house) -> None:
+    """_async_room_data never stores a Zeitwerk target (pre-0.4 key)."""
+    from custom_components.heizwerk.config_flow import _async_room_data
+
+    data = await _async_room_data(
+        hass, {**nested_room(), "target_entity": "input_number.x"}, {}
+    )
+    assert "target_entity" not in data
 
 
 async def test_hidden_fields_keep_values(hass: HomeAssistant, house) -> None:
     """Hidden fields are not submitted; stored values / defaults are kept."""
     entry = await _hub_entry(hass)
-    # Target set -> default_target hidden; lock_mode off -> frost hidden.
+    # lock_mode off -> frost_temperature hidden.
     data = nested_room(observe_only=True)
-    data.pop("default_target")
     data["windows_locks"].pop("frost_temperature")
     result = await _add_room(hass, entry, data)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     subentry_id = next(iter(entry.subentries))
-    stored = entry.subentries[subentry_id].data
-    assert stored["default_target"] == 20.0
-    assert stored["frost_temperature"] == 7.0
+    assert entry.subentries[subentry_id].data["frost_temperature"] == 7.0
 
-    # Hidden values submitted anyway are dropped by HA; stored ones survive.
+    # A hidden value submitted anyway is dropped by HA; the stored one survives.
     hass.config_entries.async_update_subentry(
         entry,
         entry.subentries[subentry_id],
-        data={**stored, "default_target": 18.0, "frost_temperature": 9.0},
+        data={**entry.subentries[subentry_id].data, "frost_temperature": 9.0},
     )
     await hass.async_block_till_done()
     result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
-    data["default_target"] = 25.0
+    data["windows_locks"]["frost_temperature"] = 11.0
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], data
     )
     assert result["reason"] == "reconfigure_successful"
     await hass.async_block_till_done()
-    stored = entry.subentries[subentry_id].data
-    assert stored["default_target"] == 18.0
-    assert stored["frost_temperature"] == 9.0
+    assert entry.subentries[subentry_id].data["frost_temperature"] == 9.0
 
 
 async def test_visible_fields_are_used(hass: HomeAssistant, house) -> None:
     entry = await _hub_entry(hass)
-    data = _without(
-        nested_room(lock_mode="frost", default_target=19.0), "target_entity"
-    )
+    data = nested_room(lock_mode="frost", default_target=19.0, observe_only=True)
     data["windows_locks"]["frost_temperature"] = 8.0
     result = await _add_room(hass, entry, data)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     stored = next(iter(entry.subentries.values())).data
     assert stored["default_target"] == 19.0
     assert stored["frost_temperature"] == 8.0
+
+
+async def test_resume_action_round_trip(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["schedule"]["resume_action"] = RESUME
+    result = await _add_room(hass, entry, data)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    subentry_id = next(iter(entry.subentries))
+    assert entry.subentries[subentry_id].data["resume_action"] == RESUME
+
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    assert _suggested(result["data_schema"])["schedule"]["resume_action"] == RESUME
+    # A single action (dict) is stored as a list; clearing removes the key.
+    data["schedule"]["resume_action"] = RESUME[0]
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    assert entry.subentries[subentry_id].data["resume_action"] == RESUME
+
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    data["schedule"]["resume_action"] = []
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+    await hass.async_block_till_done()
+    assert "resume_action" not in entry.subentries[subentry_id].data
+
+
+async def test_invalid_resume_action(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["schedule"]["resume_action"] = [{"action": "not a service!"}]
+    result = await _add_room(hass, entry, data)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"schedule": "invalid_action"}
 
 
 async def test_room_validation(hass: HomeAssistant, house) -> None:
@@ -322,8 +397,8 @@ def _plan(plan_id: str, *actions: dict[str, Any]) -> dict[str, Any]:
 
 def _set_value(entity_id: Any, *, in_target: bool = True) -> dict[str, Any]:
     action: dict[str, Any] = {
-        "action": "input_number.set_value",
-        "data": {"value": 21},
+        "action": "climate.set_temperature",
+        "data": {"temperature": 21},
     }
     if in_target:
         action["target"] = {"entity_id": entity_id}
@@ -346,20 +421,20 @@ def _register_get_plan(hass: HomeAssistant, plans: list[dict[str, Any]]) -> None
     [
         (
             [
-                _plan("heizung_bad", _set_value(TARGET)),
-                _plan("heizung_kueche", _set_value("input_number.kueche")),
+                _plan("heizung_bad", _set_value(CLIMATE)),
+                _plan("heizung_kueche", _set_value("climate.heizwerk_kueche")),
             ],
             "heizung_bad",
         ),
         (
-            [_plan("heizung_bad", _set_value([TARGET, "x.y"], in_target=False))],
+            [_plan("heizung_bad", _set_value([CLIMATE, "x.y"], in_target=False))],
             "heizung_bad",
         ),
-        ([_plan("heizung_kueche", _set_value("input_number.kueche"))], None),
+        ([_plan("heizung_kueche", _set_value("climate.heizwerk_kueche"))], None),
         (
             [
-                _plan("heizung_bad", _set_value(TARGET)),
-                _plan("heizung_bad_2", _set_value([TARGET])),
+                _plan("heizung_bad", _set_value(CLIMATE)),
+                _plan("heizung_bad_2", _set_value([CLIMATE])),
             ],
             None,
         ),
@@ -377,22 +452,24 @@ async def test_plan_auto_detect(
 
 
 async def test_plan_auto_detect_keeps_manual_plan(hass: HomeAssistant, house) -> None:
-    _register_get_plan(hass, [_plan("heizung_bad", _set_value(TARGET))])
+    _register_get_plan(hass, [_plan("heizung_bad", _set_value(CLIMATE))])
     entry = await _hub_entry(hass)
     result = await _add_room(hass, entry, nested_room(zeitwerk_plan="anderer_plan"))
     assert result["data"]["zeitwerk_plan"] == "anderer_plan"
 
 
 async def test_plan_auto_detect_on_reconfigure(hass: HomeAssistant, house) -> None:
+    """Existing room: the climate entity id comes from the entity registry."""
     entry = await _hub_entry(hass)
     result = await _add_room(hass, entry, nested_room())
     assert "zeitwerk_plan" not in result["data"]  # no Zeitwerk installed
     await hass.async_block_till_done()
-    _register_get_plan(hass, [_plan("heizung_bad", _set_value(TARGET))])
+    _register_get_plan(hass, [_plan("heizung_bad", _set_value(CLIMATE))])
     subentry_id = next(iter(entry.subentries))
     result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    # Renamed room keeps its entity id climate.heizwerk_bad (registry lookup).
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], nested_room()
+        result["flow_id"], nested_room(name="Badezimmer")
     )
     assert result["reason"] == "reconfigure_successful"
     assert entry.subentries[subentry_id].data["zeitwerk_plan"] == "heizung_bad"
@@ -445,35 +522,38 @@ def _entity_selectors(schema: probatio.Schema) -> list[dict]:
 async def test_entity_selectors_do_not_filter_everything(hass: HomeAssistant) -> None:
     """Regression: device_class=None serialised to [] hid every entity."""
     selectors = _entity_selectors(_hub_schema()) + _entity_selectors(_room_schema(hass))
-    assert len(selectors) == 11
+    assert len(selectors) == 10
     for sel in selectors:
         assert sel.get("device_class") != [], sel
 
 
 def test_visibility_conditions_serialized(hass: HomeAssistant) -> None:
-    """The frontend gets the visible conditions, also inside sections."""
+    """Layout and visible conditions as the frontend gets them."""
     schema = _room_schema(hass)
     serialized = probatio.to_field_list(schema, custom_serializer=cv.custom_serializer)
     add_visible_conditions_to_serialized_schema(schema, serialized)
     by_name = {field["name"]: field for field in serialized}
-    assert by_name["default_target"]["visible"] == {
-        "field": "target_entity",
-        "operator": "not_exists",
-    }
-    assert by_name["windows_locks"]["type"] == "expandable"
+    assert [f["name"] for f in serialized] == [
+        "name",
+        "trvs",
+        "temperature_sensor",
+        "observe_only",
+        "schedule",
+        "room_climate",
+        "windows_locks",
+        "regulation",
+        "limits",
+    ]
+    assert all("visible" not in field for field in serialized)
     inner = {field["name"]: field for field in by_name["windows_locks"]["schema"]}
     assert inner["frost_temperature"]["visible"] == {
         "field": "lock_mode",
         "value": "frost",
     }
-    assert [f["name"] for f in serialized][:6] == [
-        "name",
-        "trvs",
-        "temperature_sensor",
-        "target_entity",
-        "default_target",
-        "observe_only",
-    ]
+    schedule = {field["name"]: field for field in by_name["schedule"]["schema"]}
+    assert schedule["resume_action"]["selector"] == {"action": {}}
+    limits = [field["name"] for field in by_name["limits"]["schema"]]
+    assert limits == ["default_target", "min_temp", "max_temp"]
 
 
 @pytest.mark.parametrize("lang", ["de", "en"])
@@ -504,3 +584,44 @@ async def test_every_field_is_explained(hass: HomeAssistant, lang: str) -> None:
     errors = strings["config_subentries"]["room"]["error"]
     assert errors["offset_with_external"]
     assert "<" not in json.dumps(strings)
+
+
+async def test_heizwerk_entities_rejected_and_not_offered(
+    hass: HomeAssistant, house
+) -> None:
+    """Own climate entity as thermostat would loop."""
+    from homeassistant.config_entries import ConfigSubentryData
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={"summer_lock_temperature": 16, "summer_lock_minutes": 10},
+        subentries_data=[
+            ConfigSubentryData(
+                data=room_data(),
+                subentry_type=SUBENTRY_ROOM,
+                title="Bad",
+                unique_id=None,
+            )
+        ],
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    subentry_id = next(iter(entry.subentries))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    trv_sel = result["data_schema"].schema["trvs"].serialize()["selector"]["entity"]
+    assert "climate.heizwerk_bad" in trv_sel["exclude_entities"]
+    data = nested_room(trvs=["climate.heizwerk_bad"])
+    # The selector already rejects own entities (schema level) ...
+    with pytest.raises(InvalidData):
+        await hass.config_entries.subentries.async_configure(result["flow_id"], data)
+    # ... and validate_room catches them too (e.g. if a client bypasses it).
+    from custom_components.heizwerk.config_flow import validate_room
+
+    errors = validate_room(
+        entry,
+        flat_room(trvs=["climate.heizwerk_bad"]),
+        subentry_id,
+        hass=hass,
+    )
+    assert errors["trvs"] == "heizwerk_entity"

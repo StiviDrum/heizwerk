@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 
-from .const import SUBENTRY_ROOM
+from .const import DOMAIN, SUBENTRY_ROOM
 from .room import RoomController
 
 
@@ -25,7 +26,25 @@ class HeizwerkHub:
         }
 
     async def async_setup(self) -> None:
-        """Nothing to load yet (state is restored by the climate entities)."""
+        """Raise / clear the repair issue for rooms with a 0.3 Zeitwerk target."""
+        for subentry_id, room in self.rooms.items():
+            issue_id = f"target_entity_{subentry_id}"
+            if room.legacy_target:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="target_entity_removed",
+                    translation_placeholders={
+                        "room": room.name,
+                        "entity": room.legacy_target,
+                        "climate": room.climate_entity_id,
+                    },
+                )
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     @callback
     def async_start(self) -> None:

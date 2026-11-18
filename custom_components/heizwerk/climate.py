@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any, ClassVar
 
 from homeassistant.components.climate import (
@@ -116,9 +115,9 @@ class HeizwerkClimate(HeizwerkEntity, ClimateEntity, RestoreEntity):
             return
         if (mode := kwargs.get("hvac_mode")) is not None:
             self.room.set_enabled(mode != HVACMode.OFF)
-        await self.room.async_set_target(
-            float(temperature), await self._user_name(), self._context
-        )
+        # A value from outside (scheduler, automation, more-info dialog):
+        # the new set-point; it ends a manual override of the Heizwerk card.
+        self.room.set_target(float(temperature))
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Switch the room on/off."""
@@ -131,17 +130,3 @@ class HeizwerkClimate(HeizwerkEntity, ClimateEntity, RestoreEntity):
     async def async_turn_off(self) -> None:
         """Switch off."""
         self.room.set_enabled(False)
-
-    async def async_set_manual(
-        self, temperature: float, duration: timedelta | None
-    ) -> None:
-        """Service heizwerk.set_manual."""
-        await self.room.async_set_manual(
-            temperature, duration, await self._user_name(), self._context
-        )
-
-    async def _user_name(self) -> str | None:
-        if self._context is None or self._context.user_id is None:
-            return None
-        user = await self.hass.auth.async_get_user(self._context.user_id)
-        return user.name if user else None

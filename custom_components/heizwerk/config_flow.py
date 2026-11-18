@@ -25,7 +25,11 @@ from homeassistant.data_entry_flow import (
     Required as VisibleRequired,
     section,
 )
-from homeassistant.helpers import selector
+from homeassistant.helpers import (
+    config_validation as cv,
+    entity_registry as er,
+    selector,
+)
 from homeassistant.util import slugify
 import probatio
 
@@ -45,6 +49,7 @@ from .const import (
     CONF_OUTDOOR_HUMIDITY,
     CONF_OUTDOOR_TEMPERATURE,
     CONF_REGULATION,
+    CONF_RESUME_ACTION,
     CONF_SEASON_ENTITY,
     CONF_SUMMER_LOCK_MINUTES,
     CONF_SUMMER_LOCK_TEMPERATURE,
@@ -73,24 +78,28 @@ from .const import (
     REGULATION_SETPOINT,
     SUBENTRY_ROOM,
 )
+from .helpers import heizwerk_entities, is_heizwerk_entity
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _entity(
-    domain: list[str], multiple: bool = False, device_class: list[str] | None = None
+    domain: list[str],
+    multiple: bool = False,
+    device_class: list[str] | None = None,
+    exclude: list[str] | None = None,
 ) -> selector.EntitySelector:
-    """Entity selector; device_class only when given.
+    """Entity selector; device_class / exclude_entities only when given.
 
     An explicit ``device_class=None`` serialises to ``[]``, which makes the
     frontend filter out every entity ("no entities available").
     """
-    config = selector.EntitySelectorConfig(domain=domain, multiple=multiple)
+    options: dict[str, Any] = {"domain": domain, "multiple": multiple}
     if device_class:
-        config = selector.EntitySelectorConfig(
-            domain=domain, multiple=multiple, device_class=device_class
-        )
-    return selector.EntitySelector(config)
+        options["device_class"] = device_class
+    if exclude:
+        options["exclude_entities"] = exclude
+    return selector.EntitySelector(selector.EntitySelectorConfig(**options))
 
 
 _SENSOR_TEMP = _entity(["sensor", "input_number", "number"])
@@ -122,14 +131,14 @@ HUB_SECTIONS: dict[str, tuple[str, ...]] = {
     SECTION_CLIMATE: (CONF_OUTDOOR_HUMIDITY,),
 }
 
-SECTION_ZEITWERK = "zeitwerk"
+SECTION_SCHEDULE = "schedule"
 SECTION_ROOM_CLIMATE = "room_climate"
 SECTION_WINDOWS_LOCKS = "windows_locks"
 SECTION_REGULATION = "regulation"
 SECTION_LIMITS = "limits"
 
 ROOM_SECTIONS: dict[str, tuple[str, ...]] = {
-    SECTION_ZEITWERK: (CONF_ZEITWERK_PLAN,),
+    SECTION_SCHEDULE: (CONF_ZEITWERK_PLAN, CONF_RESUME_ACTION),
     SECTION_ROOM_CLIMATE: (
         CONF_HUMIDITY_SENSOR,
         CONF_WALL_TEMPERATURE_SENSOR,
@@ -148,13 +157,12 @@ ROOM_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_REGULATION,
         CONF_EXTERNAL_TEMPERATURE_ENTITIES,
     ),
-    SECTION_LIMITS: (CONF_MIN_TEMP, CONF_MAX_TEMP),
+    SECTION_LIMITS: (CONF_DEFAULT_TARGET, CONF_MIN_TEMP, CONF_MAX_TEMP),
 }
 
 # Fields with a visibility condition. A hidden field is omitted from the
 # submitted data; on save it keeps the stored value, else this default.
 ROOM_HIDEABLE_DEFAULTS: dict[str, Any] = {
-    CONF_DEFAULT_TARGET: DEFAULT_TARGET,
     CONF_FROST_TEMPERATURE: DEFAULT_FROST_TEMPERATURE,
 }
 
@@ -233,6 +241,7 @@ def zeitwerk_plans(hass: HomeAssistant) -> list[str]:
 
 def _room_schema(hass: HomeAssistant) -> probatio.Schema:
     plans = zeitwerk_plans(hass)
+    own = heizwerk_entities(hass)
     plan_selector: Any = (
         selector.SelectSelector(
             selector.SelectSelectorConfig(
@@ -247,23 +256,24 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
     return probatio.Schema(
         {
             probatio.Required(CONF_NAME): selector.TextSelector(),
-            probatio.Required(CONF_TRVS): _entity(["climate"], multiple=True),
-            probatio.Optional(CONF_TEMPERATURE_SENSOR): _SENSOR_TEMP,
-            probatio.Optional(CONF_TARGET_ENTITY): _entity(
-                ["input_number", "number", "sensor", "climate"]
+            # Heizwerk's own entities are never offered: they would make
+            # Heizwerk control / follow itself in an endless loop.
+            probatio.Required(CONF_TRVS): _entity(
+                ["climate"], multiple=True, exclude=own
             ),
-            # Top level, not in the "zeitwerk" section: a visibility condition
-            # can only reference fields of its own section / level.
-            VisibleRequired(
-                CONF_DEFAULT_TARGET,
-                default=DEFAULT_TARGET,
-                visible={"field": CONF_TARGET_ENTITY, "operator": "not_exists"},
-            ): _number(5, 30, 0.5, "°C"),
+            probatio.Optional(CONF_TEMPERATURE_SENSOR): _SENSOR_TEMP,
             probatio.Required(
                 CONF_OBSERVE_ONLY, default=True
             ): selector.BooleanSelector(),
-            probatio.Required(SECTION_ZEITWERK): section(
-                probatio.Schema({probatio.Optional(CONF_ZEITWERK_PLAN): plan_selector}),
+            probatio.Required(SECTION_SCHEDULE): section(
+                probatio.Schema(
+                    {
+                        probatio.Optional(CONF_ZEITWERK_PLAN): plan_selector,
+                        probatio.Optional(
+                            CONF_RESUME_ACTION
+                        ): selector.ActionSelector(),
+                    }
+                ),
                 _COLLAPSED,
             ),
             probatio.Required(SECTION_ROOM_CLIMATE): section(
@@ -339,6 +349,9 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                 probatio.Schema(
                     {
                         probatio.Required(
+                            CONF_DEFAULT_TARGET, default=DEFAULT_TARGET
+                        ): _number(5, 30, 0.5, "°C"),
+                        probatio.Required(
                             CONF_MIN_TEMP, default=DEFAULT_MIN_TEMP
                         ): _number(4, 30, 0.5, "°C"),
                         probatio.Required(
@@ -353,7 +366,10 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
 
 
 def validate_room(
-    entry: ConfigEntry, data: Mapping[str, Any], subentry_id: str | None = None
+    entry: ConfigEntry,
+    data: Mapping[str, Any],
+    subentry_id: str | None = None,
+    hass: HomeAssistant | None = None,
 ) -> dict[str, str]:
     """Return form errors for a room (flat data).
 
@@ -372,6 +388,10 @@ def validate_room(
             errors[CONF_NAME] = "name_exists"
     if not data.get(CONF_TRVS):
         errors[CONF_TRVS] = "no_trvs"
+    if hass is not None and any(
+        is_heizwerk_entity(hass, e) for e in data.get(CONF_TRVS) or []
+    ):
+        errors[CONF_TRVS] = "heizwerk_entity"
     if float(data.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP)) >= float(
         data.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP)
     ):
@@ -380,6 +400,11 @@ def validate_room(
         CONF_EXTERNAL_TEMPERATURE_ENTITIES
     ):
         errors[SECTION_REGULATION] = "offset_with_external"
+    if actions := data.get(CONF_RESUME_ACTION):
+        try:
+            cv.SCRIPT_SCHEMA(actions)
+        except probatio.Invalid:
+            errors[SECTION_SCHEDULE] = "invalid_action"
     return errors
 
 
@@ -399,8 +424,8 @@ def _action_targets(action: Any) -> set[str]:
     return found
 
 
-async def async_detect_plan(hass: HomeAssistant, target_entity: str) -> str | None:
-    """Id of the one Zeitwerk plan whose profile actions write target_entity.
+async def async_detect_plan(hass: HomeAssistant, entity_id: str) -> str | None:
+    """Id of the one Zeitwerk plan whose profile actions target entity_id.
 
     Uses the public ``zeitwerk.get_plan`` service. None when Zeitwerk is
     missing, the call fails, or no / several plans match.
@@ -423,7 +448,7 @@ async def async_detect_plan(hass: HomeAssistant, target_entity: str) -> str | No
         if isinstance(plan, Mapping)
         and plan.get("id")
         and any(
-            target_entity in _action_targets(action)
+            entity_id in _action_targets(action)
             for profile in plan.get("profiles") or []
             if isinstance(profile, Mapping)
             for action in profile.get("actions") or []
@@ -432,21 +457,42 @@ async def async_detect_plan(hass: HomeAssistant, target_entity: str) -> str | No
     return matches.pop() if len(matches) == 1 else None
 
 
+def room_climate_entity_id(
+    hass: HomeAssistant, name: str, subentry_id: str | None = None
+) -> str:
+    """Climate entity id of a room: registry for existing rooms, else predicted."""
+    if subentry_id and (
+        entity_id := er.async_get(hass).async_get_entity_id(
+            "climate", DOMAIN, subentry_id
+        )
+    ):
+        return entity_id
+    return f"climate.{DOMAIN}_{slugify(name)}"
+
+
 async def _async_room_data(
-    hass: HomeAssistant, user_input: Mapping[str, Any], stored: Mapping[str, Any]
+    hass: HomeAssistant,
+    user_input: Mapping[str, Any],
+    stored: Mapping[str, Any],
+    subentry_id: str | None = None,
 ) -> dict[str, Any]:
     """Flat subentry data from the submitted form.
 
     Hidden fields keep the stored value (or their default); an empty Zeitwerk
-    plan is detected from the Zeitwerk target.
+    plan is detected from the room's climate entity; the legacy Zeitwerk
+    target (before 0.4) is dropped.
     """
     data = _flatten(user_input, ROOM_SECTIONS)
+    data.pop(CONF_TARGET_ENTITY, None)
     for key, default in ROOM_HIDEABLE_DEFAULTS.items():
         if key not in data:
             data[key] = stored.get(key, default)
-    if (target := data.get(CONF_TARGET_ENTITY)) and not data.get(CONF_ZEITWERK_PLAN):
+    if actions := cv.ensure_list(data.pop(CONF_RESUME_ACTION, None)):
+        data[CONF_RESUME_ACTION] = actions
+    if not data.get(CONF_ZEITWERK_PLAN):
         data.pop(CONF_ZEITWERK_PLAN, None)
-        if plan := await async_detect_plan(hass, target):
+        climate = room_climate_entity_id(hass, data[CONF_NAME], subentry_id)
+        if plan := await async_detect_plan(hass, climate):
             data[CONF_ZEITWERK_PLAN] = plan
     return data
 
@@ -508,7 +554,9 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = validate_room(
-                self._get_entry(), _flatten(user_input, ROOM_SECTIONS)
+                self._get_entry(),
+                _flatten(user_input, ROOM_SECTIONS),
+                hass=self.hass,
             )
             if not errors:
                 data = await _async_room_data(self.hass, user_input, {})
@@ -530,10 +578,15 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = validate_room(
-                entry, _flatten(user_input, ROOM_SECTIONS), subentry.subentry_id
+                entry,
+                _flatten(user_input, ROOM_SECTIONS),
+                subentry.subentry_id,
+                hass=self.hass,
             )
             if not errors:
-                data = await _async_room_data(self.hass, user_input, subentry.data)
+                data = await _async_room_data(
+                    self.hass, user_input, subentry.data, subentry.subentry_id
+                )
                 return self.async_update_and_abort(
                     entry, subentry, title=data[CONF_NAME], data=data
                 )

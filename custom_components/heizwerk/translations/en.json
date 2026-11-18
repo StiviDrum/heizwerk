@@ -94,27 +94,25 @@
             "name": "Room name",
             "trvs": "Radiator thermostats",
             "temperature_sensor": "Room temperature sensor",
-            "target_entity": "Zeitwerk target (planned set-point)",
-            "default_target": "Set-point without Zeitwerk target",
             "observe_only": "Observe only (send nothing to thermostats)"
           },
           "data_description": {
             "name": "Shown on the card; the entity becomes climate.heizwerk_ plus the room name (e.g. climate.heizwerk_bad).",
             "trvs": "All thermostats of the room; they all get the same set-point.",
             "temperature_sensor": "External room sensor, strongly recommended. Without it the thermostats' own readings are averaged.",
-            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Manual overrides are written there and shown in Zeitwerk (not in observe-only mode).",
-            "default_target": "Base set-point while no Zeitwerk target is set. Default 20 °C.",
             "observe_only": "Computes and shows the planned commands but sends nothing. Default on; keep it on while the old heating control still runs in parallel."
           },
           "sections": {
-            "zeitwerk": {
-              "name": "Zeitwerk",
-              "description": "Plan for profile display, day band and 'until next block'. Usually detected automatically.",
+            "schedule": {
+              "name": "Schedule & resume",
+              "description": "Your scheduler (Zeitwerk, Scheduler, automation) sets the room via climate.set_temperature. Here: plan display and what 'Resume' does. Resume: empty = zeitwerk.resume for the detected plan, without a plan resume is hidden; for Scheduler e.g. scheduler.run_action with the schedule switch.",
               "data": {
-                "zeitwerk_plan": "Zeitwerk plan"
+                "zeitwerk_plan": "Zeitwerk plan",
+                "resume_action": "Resume action"
               },
               "data_description": {
-                "zeitwerk_plan": "Detected automatically from the Zeitwerk target when left empty. Only set it if detection finds no or several plans."
+                "zeitwerk_plan": "Optional, detected automatically: the Zeitwerk plan whose profile actions set this room. Only used for display (profile, day band, until).",
+                "resume_action": "What happens on 'Resume' and when 1 h / 3 h run out. Empty with a detected Zeitwerk plan: zeitwerk.resume for that plan. Empty without plan: Resume is hidden. For Scheduler e.g. scheduler.run_action with the schedule switch."
               }
             },
             "room_climate": {
@@ -166,13 +164,15 @@
               }
             },
             "limits": {
-              "name": "Limits",
-              "description": "Allowed set-point range.",
+              "name": "Set-points & limits",
+              "description": "Initial set-point and allowed set-point range.",
               "data": {
+                "default_target": "Initial set-point",
                 "min_temp": "Minimum set-point",
                 "max_temp": "Maximum set-point"
               },
               "data_description": {
+                "default_target": "Used until the first set-point arrives from your schedule or the card. Default 20 °C.",
                 "min_temp": "Lowest set-point Heizwerk sends. Default 5 °C.",
                 "max_temp": "Highest set-point Heizwerk sends. Default 30 °C."
               }
@@ -185,27 +185,25 @@
             "name": "Room name",
             "trvs": "Radiator thermostats",
             "temperature_sensor": "Room temperature sensor",
-            "target_entity": "Zeitwerk target (planned set-point)",
-            "default_target": "Set-point without Zeitwerk target",
             "observe_only": "Observe only (send nothing to thermostats)"
           },
           "data_description": {
             "name": "Shown on the card; the entity becomes climate.heizwerk_ plus the room name (e.g. climate.heizwerk_bad).",
             "trvs": "All thermostats of the room; they all get the same set-point.",
             "temperature_sensor": "External room sensor, strongly recommended. Without it the thermostats' own readings are averaged.",
-            "target_entity": "Entity your Zeitwerk plan writes, e.g. input_number.temperaturspeicher_bad. Manual overrides are written there and shown in Zeitwerk (not in observe-only mode).",
-            "default_target": "Base set-point while no Zeitwerk target is set. Default 20 °C.",
             "observe_only": "Computes and shows the planned commands but sends nothing. Default on; keep it on while the old heating control still runs in parallel."
           },
           "sections": {
-            "zeitwerk": {
-              "name": "Zeitwerk",
-              "description": "Plan for profile display, day band and 'until next block'. Usually detected automatically.",
+            "schedule": {
+              "name": "Schedule & resume",
+              "description": "Your scheduler (Zeitwerk, Scheduler, automation) sets the room via climate.set_temperature. Here: plan display and what 'Resume' does. Resume: empty = zeitwerk.resume for the detected plan, without a plan resume is hidden; for Scheduler e.g. scheduler.run_action with the schedule switch.",
               "data": {
-                "zeitwerk_plan": "Zeitwerk plan"
+                "zeitwerk_plan": "Zeitwerk plan",
+                "resume_action": "Resume action"
               },
               "data_description": {
-                "zeitwerk_plan": "Detected automatically from the Zeitwerk target when left empty. Only set it if detection finds no or several plans."
+                "zeitwerk_plan": "Optional, detected automatically: the Zeitwerk plan whose profile actions set this room. Only used for display (profile, day band, until).",
+                "resume_action": "What happens on 'Resume' and when 1 h / 3 h run out. Empty with a detected Zeitwerk plan: zeitwerk.resume for that plan. Empty without plan: Resume is hidden. For Scheduler e.g. scheduler.run_action with the schedule switch."
               }
             },
             "room_climate": {
@@ -257,13 +255,15 @@
               }
             },
             "limits": {
-              "name": "Limits",
-              "description": "Allowed set-point range.",
+              "name": "Set-points & limits",
+              "description": "Initial set-point and allowed set-point range.",
               "data": {
+                "default_target": "Initial set-point",
                 "min_temp": "Minimum set-point",
                 "max_temp": "Maximum set-point"
               },
               "data_description": {
+                "default_target": "Used until the first set-point arrives from your schedule or the card. Default 20 °C.",
                 "min_temp": "Lowest set-point Heizwerk sends. Default 5 °C.",
                 "max_temp": "Highest set-point Heizwerk sends. Default 30 °C."
               }
@@ -276,7 +276,9 @@
         "name_exists": "A room with this name already exists.",
         "no_trvs": "Select at least one thermostat.",
         "min_max": "Maximum must be above minimum.",
-        "offset_with_external": "Offset regulation and an external temperature input compensate twice. Use regulation 'Set-point' with the external input."
+        "offset_with_external": "Offset regulation and an external temperature input compensate twice. Use regulation 'Set-point' with the external input.",
+        "heizwerk_entity": "Heizwerk entities are not allowed here (Heizwerk would control itself).",
+        "invalid_action": "The resume action is invalid. Check the action configuration."
       },
       "abort": {
         "reconfigure_successful": "Room updated."
@@ -380,6 +382,12 @@
           "description": "Heizwerk room, e.g. climate.heizwerk_bad"
         }
       }
+    }
+  },
+  "issues": {
+    "target_entity_removed": {
+      "title": "Heizwerk: Zeitwerk target of room {room} is no longer used",
+      "description": "Since Heizwerk 0.4 the schedule writes to the room entity directly. The configured Zeitwerk target `{entity}` is ignored.\n\nTo switch:\n1. Change the profile actions of the room's Zeitwerk plan to `climate.set_temperature` targeting `{climate}`.\n2. Open the room in the Heizwerk integration and save it once – then this notice disappears."
     }
   }
 }

@@ -94,27 +94,25 @@
             "name": "Raumname",
             "trvs": "Heizkörperthermostate",
             "temperature_sensor": "Raumfühler (Temperatur)",
-            "target_entity": "Zeitwerk-Ziel (geplanter Sollwert)",
-            "default_target": "Sollwert ohne Zeitwerk-Ziel",
             "observe_only": "Nur beobachten (nichts an die Thermostate senden)"
           },
           "data_description": {
             "name": "Erscheint auf der Karte; die Entität heißt climate.heizwerk_ plus Raumname (z. B. climate.heizwerk_bad).",
             "trvs": "Alle Thermostate des Raums; sie bekommen denselben Sollwert.",
             "temperature_sensor": "Externer Raumfühler, dringend empfohlen. Ohne ihn gilt der Mittelwert der Thermostat-Eigenmessungen.",
-            "target_entity": "Entität, die dein Zeitwerk-Plan setzt, z. B. input_number.temperaturspeicher_bad. Manuelle Übersteuerungen werden dort geschrieben und in Zeitwerk angezeigt (nicht bei „Nur beobachten“).",
-            "default_target": "Basis-Sollwert, solange kein Zeitwerk-Ziel gesetzt ist. Standard 20 °C.",
             "observe_only": "Berechnet und zeigt die geplanten Befehle, sendet aber nichts. Standard an; in der Parallelphase zur alten Heizungssteuerung anlassen."
           },
           "sections": {
-            "zeitwerk": {
-              "name": "Zeitwerk",
-              "description": "Plan für Profilanzeige, Tagesband und „bis nächster Block“. Wird meist automatisch erkannt.",
+            "schedule": {
+              "name": "Plan & Fortsetzen",
+              "description": "Dein Zeitplan (Zeitwerk, Scheduler, Automation) setzt den Raum per climate.set_temperature. Hier: Planansicht und was „Fortsetzen“ tut. Fortsetzen: leer = zeitwerk.resume für den erkannten Plan, ohne Plan wird Fortsetzen ausgeblendet; für Scheduler z. B. scheduler.run_action mit dem Zeitplan-Schalter.",
               "data": {
-                "zeitwerk_plan": "Zeitwerk-Plan"
+                "zeitwerk_plan": "Zeitwerk-Plan",
+                "resume_action": "Aktion bei „Fortsetzen“"
               },
               "data_description": {
-                "zeitwerk_plan": "Wird bei leerem Feld automatisch aus dem Zeitwerk-Ziel ermittelt. Nur setzen, wenn kein oder mehrere Pläne passen."
+                "zeitwerk_plan": "Optional, wird automatisch erkannt: der Zeitwerk-Plan, dessen Profilaktionen diesen Raum setzen. Nur für die Anzeige (Profil, Tagesband, bis).",
+                "resume_action": "Was bei „Fortsetzen“ und nach Ablauf von 1 Std./3 Std. passiert. Leer + Zeitwerk-Plan erkannt: zeitwerk.resume für diesen Plan. Leer ohne Plan: Fortsetzen wird ausgeblendet. Für Scheduler z. B. scheduler.run_action mit dem Zeitplan-Schalter."
               }
             },
             "room_climate": {
@@ -166,13 +164,15 @@
               }
             },
             "limits": {
-              "name": "Grenzen",
-              "description": "Erlaubter Sollwertbereich.",
+              "name": "Sollwerte & Grenzen",
+              "description": "Start-Sollwert und erlaubter Sollwertbereich.",
               "data": {
+                "default_target": "Start-Sollwert",
                 "min_temp": "Minimaler Sollwert",
                 "max_temp": "Maximaler Sollwert"
               },
               "data_description": {
+                "default_target": "Gilt, bis der erste Sollwert vom Zeitplan oder von der Karte kommt. Standard 20 °C.",
                 "min_temp": "Niedrigster Sollwert, den Heizwerk sendet. Standard 5 °C.",
                 "max_temp": "Höchster Sollwert, den Heizwerk sendet. Standard 30 °C."
               }
@@ -185,27 +185,25 @@
             "name": "Raumname",
             "trvs": "Heizkörperthermostate",
             "temperature_sensor": "Raumfühler (Temperatur)",
-            "target_entity": "Zeitwerk-Ziel (geplanter Sollwert)",
-            "default_target": "Sollwert ohne Zeitwerk-Ziel",
             "observe_only": "Nur beobachten (nichts an die Thermostate senden)"
           },
           "data_description": {
             "name": "Erscheint auf der Karte; die Entität heißt climate.heizwerk_ plus Raumname (z. B. climate.heizwerk_bad).",
             "trvs": "Alle Thermostate des Raums; sie bekommen denselben Sollwert.",
             "temperature_sensor": "Externer Raumfühler, dringend empfohlen. Ohne ihn gilt der Mittelwert der Thermostat-Eigenmessungen.",
-            "target_entity": "Entität, die dein Zeitwerk-Plan setzt, z. B. input_number.temperaturspeicher_bad. Manuelle Übersteuerungen werden dort geschrieben und in Zeitwerk angezeigt (nicht bei „Nur beobachten“).",
-            "default_target": "Basis-Sollwert, solange kein Zeitwerk-Ziel gesetzt ist. Standard 20 °C.",
             "observe_only": "Berechnet und zeigt die geplanten Befehle, sendet aber nichts. Standard an; in der Parallelphase zur alten Heizungssteuerung anlassen."
           },
           "sections": {
-            "zeitwerk": {
-              "name": "Zeitwerk",
-              "description": "Plan für Profilanzeige, Tagesband und „bis nächster Block“. Wird meist automatisch erkannt.",
+            "schedule": {
+              "name": "Plan & Fortsetzen",
+              "description": "Dein Zeitplan (Zeitwerk, Scheduler, Automation) setzt den Raum per climate.set_temperature. Hier: Planansicht und was „Fortsetzen“ tut. Fortsetzen: leer = zeitwerk.resume für den erkannten Plan, ohne Plan wird Fortsetzen ausgeblendet; für Scheduler z. B. scheduler.run_action mit dem Zeitplan-Schalter.",
               "data": {
-                "zeitwerk_plan": "Zeitwerk-Plan"
+                "zeitwerk_plan": "Zeitwerk-Plan",
+                "resume_action": "Aktion bei „Fortsetzen“"
               },
               "data_description": {
-                "zeitwerk_plan": "Wird bei leerem Feld automatisch aus dem Zeitwerk-Ziel ermittelt. Nur setzen, wenn kein oder mehrere Pläne passen."
+                "zeitwerk_plan": "Optional, wird automatisch erkannt: der Zeitwerk-Plan, dessen Profilaktionen diesen Raum setzen. Nur für die Anzeige (Profil, Tagesband, bis).",
+                "resume_action": "Was bei „Fortsetzen“ und nach Ablauf von 1 Std./3 Std. passiert. Leer + Zeitwerk-Plan erkannt: zeitwerk.resume für diesen Plan. Leer ohne Plan: Fortsetzen wird ausgeblendet. Für Scheduler z. B. scheduler.run_action mit dem Zeitplan-Schalter."
               }
             },
             "room_climate": {
@@ -257,13 +255,15 @@
               }
             },
             "limits": {
-              "name": "Grenzen",
-              "description": "Erlaubter Sollwertbereich.",
+              "name": "Sollwerte & Grenzen",
+              "description": "Start-Sollwert und erlaubter Sollwertbereich.",
               "data": {
+                "default_target": "Start-Sollwert",
                 "min_temp": "Minimaler Sollwert",
                 "max_temp": "Maximaler Sollwert"
               },
               "data_description": {
+                "default_target": "Gilt, bis der erste Sollwert vom Zeitplan oder von der Karte kommt. Standard 20 °C.",
                 "min_temp": "Niedrigster Sollwert, den Heizwerk sendet. Standard 5 °C.",
                 "max_temp": "Höchster Sollwert, den Heizwerk sendet. Standard 30 °C."
               }
@@ -276,7 +276,9 @@
         "name_exists": "Ein Raum mit diesem Namen existiert bereits.",
         "no_trvs": "Mindestens ein Thermostat auswählen.",
         "min_max": "Maximum muss über dem Minimum liegen.",
-        "offset_with_external": "Offset-Regelung und externer Temperatureingang gleichen doppelt aus. Mit externem Eingang Regelung „Sollwert“ wählen."
+        "offset_with_external": "Offset-Regelung und externer Temperatureingang gleichen doppelt aus. Mit externem Eingang Regelung „Sollwert“ wählen.",
+        "heizwerk_entity": "Heizwerk-Entitäten sind hier nicht erlaubt (Heizwerk würde sich selbst steuern).",
+        "invalid_action": "Die Aktion bei „Fortsetzen“ ist ungültig. Bitte die Aktionskonfiguration prüfen."
       },
       "abort": {
         "reconfigure_successful": "Raum gespeichert."
@@ -380,6 +382,12 @@
           "description": "Heizwerk-Raum, z. B. climate.heizwerk_bad"
         }
       }
+    }
+  },
+  "issues": {
+    "target_entity_removed": {
+      "title": "Heizwerk: Zeitwerk-Ziel im Raum {room} wird nicht mehr genutzt",
+      "description": "Seit Heizwerk 0.4 schreibt der Zeitplan direkt auf die Raum-Entität. Das eingetragene Zeitwerk-Ziel `{entity}` wird ignoriert.\n\nSo stellst du um:\n1. Im Zeitwerk-Plan des Raums die Profil-Aktionen auf `climate.set_temperature` mit Ziel `{climate}` ändern.\n2. Den Raum in der Heizwerk-Integration einmal öffnen und speichern – dann verschwindet dieser Hinweis."
     }
   }
 }

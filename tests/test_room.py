@@ -8,7 +8,6 @@ from typing import Any
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant, ServiceRegistry
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant.common import async_fire_time_changed, async_mock_service
 
@@ -18,7 +17,6 @@ from .conftest import (
     OUTDOOR,
     ROOM_SENSOR,
     SEASON,
-    TARGET,
     TRV,
     WINDOW,
     trv_state,
@@ -79,7 +77,6 @@ async def test_entities_and_attributes(hass: HomeAssistant, setup_room, calls) -
     assert state.attributes["current_humidity"] == 60
     assert state.attributes["status"] == "heating"
     assert state.attributes["room_name"] == "Bad"
-    assert state.attributes["scheduled_target"] == 22.0
     assert state.attributes["temperature_source"] == "sensor"
     assert state.attributes["ventilation_minutes"] == 10
     assert state.attributes["mold_level"] == "warning"
@@ -204,104 +201,6 @@ async def test_frost_lock_mode(
     assert calls["temp"][-1].data == {"entity_id": TRV, "temperature": 7.0}
 
 
-async def test_manual_until_next_ends_on_new_target(
-    hass: HomeAssistant, setup_room, calls
-) -> None:
-    await setup_room()
-    await hass.services.async_call(
-        "climate",
-        "set_temperature",
-        {"entity_id": CLIMATE, "temperature": 23.5},
-        blocking=True,
-    )
-    attrs = hass.states.get(CLIMATE).attributes
-    assert attrs["temperature"] == 23.5
-    assert attrs["status"] == "manual"
-    assert attrs["manual_mode"] == "until_next"
-    # Zeitwerk switches profile -> target entity changes -> manual ends
-    hass.states.async_set(TARGET, "18.0")
-    await hass.async_block_till_done()
-    attrs = hass.states.get(CLIMATE).attributes
-    assert attrs["status"] == "reached"
-    assert attrs["temperature"] == 18.0
-    assert attrs["manual_target"] is None
-
-
-async def test_manual_until_zeitwerk_next_change(
-    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
-) -> None:
-    nxt = dt_util.utcnow() + timedelta(minutes=30)
-    hass.states.async_set(
-        "sensor.zeitwerk_heizung_bad_profile",
-        "Komfort",
-        {"plan_id": "heizung_bad", "profile_id": "comfort", "source": "schedule"},
-    )
-    hass.states.async_set(
-        "sensor.zeitwerk_heizung_bad_next_change",
-        nxt.isoformat(),
-        {"next_profile": "eco", "next_profile_name": "Absenkung"},
-    )
-    await setup_room(zeitwerk_plan="heizung_bad")
-    attrs = hass.states.get(CLIMATE).attributes
-    assert attrs["zeitwerk_profile"] == "Komfort"
-    assert attrs["next_profile"] == "Absenkung"
-    await hass.services.async_call(
-        "heizwerk",
-        "set_manual",
-        {"entity_id": CLIMATE, "temperature": 24},
-        blocking=True,
-    )
-    attrs = hass.states.get(CLIMATE).attributes
-    assert dt_util.parse_datetime(attrs["manual_until"]) == nxt
-    await _tick(hass, freezer, 31 * 60)
-    assert hass.states.get(CLIMATE).attributes["status"] != "manual"
-
-
-async def test_manual_duration_and_resume(
-    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
-) -> None:
-    await setup_room()
-    await hass.services.async_call(
-        "heizwerk",
-        "set_manual",
-        {"entity_id": CLIMATE, "temperature": 19, "duration": {"hours": 1}},
-        blocking=True,
-    )
-    attrs = hass.states.get(CLIMATE).attributes
-    assert attrs["manual_mode"] == "duration"
-    assert attrs["temperature"] == 19
-    await _tick(hass, freezer, 59 * 60)
-    assert hass.states.get(CLIMATE).attributes["status"] == "manual"
-    await _tick(hass, freezer, 61)
-    assert hass.states.get(CLIMATE).attributes["temperature"] == 22.0
-    await hass.services.async_call(
-        "heizwerk",
-        "set_manual",
-        {"entity_id": CLIMATE, "temperature": 25},
-        blocking=True,
-    )
-    await hass.services.async_call(
-        "heizwerk", "resume", {"entity_id": CLIMATE}, blocking=True
-    )
-    assert hass.states.get(CLIMATE).attributes["temperature"] == 22.0
-
-
-async def test_without_target_entity_set_temperature_is_base(
-    hass: HomeAssistant, setup_room, calls
-) -> None:
-    await setup_room(target_entity=None)
-    assert hass.states.get(CLIMATE).attributes["temperature"] == 20.0
-    await hass.services.async_call(
-        "climate",
-        "set_temperature",
-        {"entity_id": CLIMATE, "temperature": 21},
-        blocking=True,
-    )
-    attrs = hass.states.get(CLIMATE).attributes
-    assert attrs["temperature"] == 21
-    assert attrs["status"] != "manual"
-
-
 async def test_room_off(hass: HomeAssistant, setup_room, calls, freezer) -> None:
     await setup_room()
     await hass.services.async_call(
@@ -347,23 +246,6 @@ async def test_external_temperature_push(
     hass.states.async_set(ROOM_SENSOR, "18.7")
     await hass.async_block_till_done()
     assert pushes[-1].data["value"] == 18.7
-
-
-async def test_restore_manual_after_reload(
-    hass: HomeAssistant, setup_room, calls
-) -> None:
-    entry = await setup_room()
-    await hass.services.async_call(
-        "heizwerk",
-        "set_manual",
-        {"entity_id": CLIMATE, "temperature": 24, "duration": {"hours": 2}},
-        blocking=True,
-    )
-    assert await hass.config_entries.async_reload(entry.entry_id)
-    await hass.async_block_till_done()
-    attrs = hass.states.get(CLIMATE).attributes
-    assert attrs["status"] == "manual"
-    assert attrs["temperature"] == 24
 
 
 async def test_observe_switch_updates_subentry(
@@ -421,3 +303,12 @@ async def test_lost_command_is_resent(
     # In sync now: no further commands
     await _tick(hass, freezer, 10 * 60)
     assert len(calls["temp"]) == 2
+
+
+async def test_own_climate_as_thermostat_is_ignored(
+    hass: HomeAssistant, setup_room, calls
+) -> None:
+    await setup_room(trvs=[TRV, CLIMATE])
+    attrs = hass.states.get(CLIMATE).attributes
+    assert [t["entity_id"] for t in attrs["trvs"]] == [TRV]
+    assert CLIMATE in attrs["ignored_entities"]
