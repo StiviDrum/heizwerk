@@ -40,8 +40,9 @@ sensor, locks, manual override and room-climate hints.
 2. Install *Heizwerk*, restart Home Assistant.
 3. Settings → Devices & services → *Add integration* → Heizwerk: choose outdoor
    temperature/humidity, heating-period entity and summer lock.
-4. On the Heizwerk entry: **Add room** – name, thermostats, sensors, windows,
-   Zeitwerk target and plan.
+4. On the Heizwerk entry: **Add room** – name, thermostats, room sensor and
+   Zeitwerk target on top; everything optional in collapsible sections, each
+   setting with a help text. The Zeitwerk plan is detected automatically.
 
 ## Card
 
@@ -64,6 +65,9 @@ entities:
   - climate.heizwerk_bad
   - climate.heizwerk_kueche
 ```
+
+On the standard card the target can be dragged on the dial (touch or mouse,
+0.5 K steps, sent on release) or changed with ± and the arrow keys.
 
 Options: `dial_min` / `dial_max` (scale, default 12–26 °C), `manual_duration`
 (`next`, `60`, `180` – duration for ± on the standard card).

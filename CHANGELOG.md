@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0 – 2026-11-18
+
+- Room dialog: required and important fields first (name, thermostats, room
+  sensor, Zeitwerk target, observe-only), everything else in collapsible
+  sections (Zeitwerk, room climate, windows & locks, regulation, limits); the
+  house options likewise. Stored data stays flat – existing rooms keep working.
+- Help text for every setting (de/en) with defaults and recommendations.
+- Fields appear only when they matter: frost temperature only with lock mode
+  "frost", set-point without Zeitwerk target only without a target.
+- Zeitwerk plan is detected automatically from the Zeitwerk target
+  (`zeitwerk.get_plan`); the field remains as an override.
+- Error when "offset" regulation is combined with an external temperature input.
+- Card: drag the target on the dial (touch and mouse, 0.5 K steps, committed
+  on release); keyboard control (arrows, Page Up/Down) and ARIA slider.
+
 ## 0.2.0 – 2026-11-18
 
 - Manual overrides are visible in Zeitwerk: with a Zeitwerk target and plan

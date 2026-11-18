@@ -97,6 +97,11 @@ Läutwerk-Dienste zur Referenz: `laeutwerk.trigger` {rule}, `acknowledge`,
 | `humidity_threshold` | Lüften empfohlen ab % | 60 |
 | `observe_only` | **Nur beobachten** | **an** |
 
+Dialog (ab 0.3): oben Name, Thermostate, Raumfühler, Zeitwerk-Ziel, ggf. Sollwert
+ohne Ziel, Nur beobachten; darunter zugeklappte Abschnitte „Zeitwerk“ (Plan, wird
+automatisch erkannt), „Raumklima“, „Fenster & Sperren“, „Regelung (erweitert)“,
+„Grenzen“. Gespeichert wird weiterhin flach (gleiche Schlüssel wie oben).
+
 Neue Räume starten **immer** im Modus „Nur beobachten“ (Abschnitt 1.4 der
 Hausregeln: Heizungssteuerung nur mit Freigabe).
 
@@ -214,6 +219,8 @@ manual_duration: next    # next | 60 | 180 (Minuten) – Standard für ± in der
 - **Kompakt** (Mockup `mockups/heizwerk-karte-kompakt.html`): `entity` → Einzelkachel
   (eine Zeile, ± ), `entities` → Hausliste mit aufklappbaren Zeilen (Mini-Balken,
   Kennwerte, ±, Dauer-Pillen „Bis nächster Block / 1 Std. / 3 Std.“).
+- Standard: Ziel am Kreis ziehbar (Touch/Maus, 0,5 K, Senden beim Loslassen),
+  Tastatur (Pfeile, Bild auf/ab), ARIA-Slider.
 - Nutzt HA-Theme-Variablen, hell/dunkel, Touch-Ziele ≥ 44 px, kein Hover-Zwang,
   Übersetzungen de/en, freundlicher Fehlerzustand ohne `hass`/Entität.
 - Karte wird von der Integration selbst registriert (statischer Pfad +

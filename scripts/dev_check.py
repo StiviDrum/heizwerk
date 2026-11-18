@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -244,6 +245,85 @@ async def entries(api: Api, domain: str) -> list[dict[str, Any]]:
     ]
 
 
+def nest_room(flat: dict[str, Any]) -> dict[str, Any]:
+    """Room data in the dialog's section layout (0.3+)."""
+    # Lazy: importing Home Assistant is slow and only needed for new rooms.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from custom_components.heizwerk.config_flow import (  # noqa: PLC0415
+        ROOM_SECTIONS,
+        _nest,
+    )
+
+    return _nest(flat, ROOM_SECTIONS)
+
+
+def form_values(fields: list[dict[str, Any]]) -> dict[str, Any]:
+    """Suggested values of a serialized form, nested like the sections."""
+    out: dict[str, Any] = {}
+    for f in fields:
+        if f.get("type") == "expandable":
+            out[f["name"]] = form_values(f["schema"])
+            continue
+        val = (f.get("description") or {}).get("suggested_value", f.get("default"))
+        if val is not None:
+            out[f["name"]] = val
+    return out
+
+
+async def dialog_checks(api: Api) -> list[str]:
+    """Room dialog against the real Zeitwerk: plan auto-detect, offset warning."""
+    fails: list[str] = []
+    entry = (await entries(api, "heizwerk"))[0]["entry_id"]
+    subs = await api.ws({"type": "config_entries/subentries/list", "entry_id": entry})
+    bad_id = next(x["subentry_id"] for x in subs[0]["result"] if x["title"] == "Bad")
+
+    async def reconfigure(change) -> dict[str, Any]:
+        flow = await api.post(
+            "/api/config/config_entries/subentries/flow",
+            {"handler": [entry, "room"], "subentry_id": bad_id},
+        )
+        top = [f["name"] for f in flow["data_schema"]]
+        data = form_values(flow["data_schema"])
+        change(data)
+        res = await api.post(
+            f"/api/config/config_entries/subentries/flow/{flow['flow_id']}", data
+        )
+        if res.get("type") == "form":
+            await api.s.delete(
+                f"{HA}/api/config/config_entries/subentries/flow/{flow['flow_id']}",
+                headers=api.h,
+            )
+        res["_top"] = top
+        return res
+
+    def check(cond: bool, msg: str) -> None:
+        print(("  ok  " if cond else "  FAIL ") + msg)
+        if not cond:
+            fails.append(msg)
+
+    res = await reconfigure(lambda d: d["zeitwerk"].pop("zeitwerk_plan", None))
+    print("  Dialog oben:", res["_top"])
+    check(
+        res["_top"][:4] == ["name", "trvs", "temperature_sensor", "target_entity"],
+        "Pflicht/wichtig oben",
+    )
+    check(res.get("type") == "abort", "Raum ändern ohne Plan gespeichert")
+    subs = await api.ws({"type": "config_entries/subentries/list", "entry_id": entry})
+    await asyncio.sleep(3)  # reload after the update
+    st = await api.state("climate.heizwerk_bad")
+    check(
+        st["attributes"].get("zeitwerk_plan") == "heizung_bad",
+        "Plan automatisch erkannt (heizung_bad)",
+    )
+
+    res = await reconfigure(lambda d: d["regulation"].update(regulation="offset"))
+    check(
+        res.get("errors") == {"regulation": "offset_with_external"},
+        f"Warnung Offset + externer Eingang ({res.get('errors')})",
+    )
+    return fails
+
+
 async def setup(api: Api) -> None:
     """Zeitwerk + plan, Heizwerk + rooms (idempotent)."""
     if not await entries(api, "zeitwerk"):
@@ -281,7 +361,8 @@ async def setup(api: Api) -> None:
             {"handler": [entry_id, "room"], "show_advanced_options": False},
         )
         res = await api.post(
-            f"/api/config/config_entries/subentries/flow/{flow['flow_id']}", room
+            f"/api/config/config_entries/subentries/flow/{flow['flow_id']}",
+            nest_room(room),
         )
         print("room", room["name"], res.get("type"), res.get("errors"))
         await asyncio.sleep(2)
@@ -621,6 +702,141 @@ async def dashboard(api: Api) -> None:
     )
 
 
+DIAL = {"cx": 130, "cy": 112.05, "r": 92, "start": 135, "sweep": 270, "w": 260}
+
+
+def dial_xy(
+    rect: dict[str, float], value: float, lo: float = 12, hi: float = 26
+) -> tuple[float, float]:
+    """Screen coordinates of a value on the dial (viewBox 260×214)."""
+    f = max(0.0, min(1.0, (value - lo) / (hi - lo)))
+    a = math.radians(DIAL["start"] + DIAL["sweep"] * f)
+    scale = rect["width"] / DIAL["w"]
+    return (
+        rect["left"] + (DIAL["cx"] + DIAL["r"] * math.cos(a)) * scale,
+        rect["top"] + (DIAL["cy"] + DIAL["r"] * math.sin(a)) * scale,
+    )
+
+
+async def drag_test(api: Api, cdp: Cdp) -> list[str]:
+    """Drag the target knob of the standard card with real mouse events."""
+    fails: list[str] = []
+    bad = "climate.heizwerk_bad"
+    await api.call("heizwerk", "resume", entity_id=bad)
+    await asyncio.sleep(2)
+    await cdp.call("Page.navigate", url=f"{HA}/heizwerk-dev/standard")
+    await asyncio.sleep(8)
+    await cdp.js(FIND)
+    rect = await cdp.js(
+        "(() => { const c = window.__findAll('heizwerk-card')[0];"
+        " const r = c.shadowRoot.querySelector('.dial svg').getBoundingClientRect();"
+        " return {left: r.left, top: r.top, width: r.width, height: r.height} })()"
+    )
+    start_value = (await api.state(bad))["attributes"]["temperature"]
+    goal = 24.5
+    x0, y0 = dial_xy(rect, start_value)
+    x1, y1 = dial_xy(rect, goal)
+    await cdp.call("Input.dispatchMouseEvent", type="mouseMoved", x=x0, y=y0)
+    await cdp.call(
+        "Input.dispatchMouseEvent",
+        type="mousePressed",
+        x=x0,
+        y=y0,
+        button="left",
+        clickCount=1,
+    )
+    for i in range(1, 11):
+        await cdp.call(
+            "Input.dispatchMouseEvent",
+            type="mouseMoved",
+            x=x0 + (x1 - x0) * i / 10,
+            y=y0 + (y1 - y0) * i / 10,
+            button="left",
+            buttons=1,
+        )
+        await asyncio.sleep(0.03)
+    live = await cdp.js(
+        "(() => { const c = window.__findAll('heizwerk-card')[0];"
+        " return c.shadowRoot.querySelector('.ziel b').textContent.trim() })()"
+    )
+    await cdp.shot("drag-live")
+    await cdp.call(
+        "Input.dispatchMouseEvent",
+        type="mouseReleased",
+        x=x1,
+        y=y1,
+        button="left",
+        clickCount=1,
+    )
+    await asyncio.sleep(3)
+    st = await api.state(bad)
+    print(
+        f"  drag: start {start_value} → live '{live}' → state {st['attributes']['temperature']}"
+    )
+    if live != "24,5°":
+        fails.append(f"Ziehen: Live-Anzeige '{live}' statt 24,5°")
+    if st["attributes"]["temperature"] != goal:
+        fails.append(f"Ziehen: Sollwert {st['attributes']['temperature']} statt {goal}")
+    if st["attributes"].get("status") != "manual":
+        fails.append("Ziehen: keine manuelle Übersteuerung")
+    await cdp.shot("drag-done")
+    await api.call("heizwerk", "resume", entity_id=bad)
+    return fails
+
+
+CLICK_TEXT = """
+(async (text) => {
+  const all = window.__findAll('ha-button, mwc-button, button, ha-list-item, ha-md-list-item, a');
+  const hit = all.find((e) => (e.textContent || '').trim().includes(text));
+  if (!hit) return false;
+  hit.click();
+  return true;
+})
+"""
+
+
+async def dialog_shots(cdp: Cdp) -> list[str]:
+    """Open 'Raum hinzufügen' in the real frontend, screenshot collapsed + expanded."""
+    fails: list[str] = []
+    await cdp.call(
+        "Emulation.setDeviceMetricsOverride",
+        width=430,
+        height=2200,
+        deviceScaleFactor=1,
+        mobile=True,
+    )
+    await cdp.call(
+        "Page.navigate", url=f"{HA}/config/integrations/integration/heizwerk"
+    )
+    await asyncio.sleep(8)
+    await cdp.js(FIND)
+    clicked = await cdp.js(f"({CLICK_TEXT})('Raum hinzufügen')")
+    await asyncio.sleep(4)
+    await cdp.js(FIND)
+    fields = await cdp.js(
+        "(() => { const f = window.__findAll('ha-form'); "
+        " return f.length ? f[f.length - 1].schema.map(s => s.name + (s.type === 'expandable' ? ':section' : '')) : [] })()"
+    )
+    print("  dialog clicked:", clicked, "fields:", fields)
+    if not clicked or not fields:
+        fails.append("Dialog 'Raum hinzufügen' nicht geöffnet")
+        return fails
+    await cdp.shot("dialog-raum-zu")
+    await cdp.js(
+        "(() => { window.__findAll('ha-expansion-panel').forEach(p => p.expanded = true); return true })()"
+    )
+    await asyncio.sleep(1)
+    await cdp.shot("dialog-raum-offen")
+    await cdp.call(
+        "Input.dispatchKeyEvent",
+        type="keyDown",
+        key="Escape",
+        code="Escape",
+        windowsVirtualKeyCode=27,
+    )
+    return fails
+
+
 async def screenshots(
     api: Api, session: aiohttp.ClientSession, tok: dict[str, Any]
 ) -> list[str]:
@@ -720,6 +936,8 @@ async def screenshots(
                     if any(c["dark"] != dark for c in info):
                         fails.append(f"Karte {view}/{mode}: Dunkelmodus nicht erkannt")
                     await cdp.shot(f"{view}-{mode}")
+            fails += await drag_test(api, cdp)
+            fails += await dialog_shots(cdp)
     finally:
         proc.terminate()
         await api.call(
@@ -744,8 +962,10 @@ async def main() -> int:
         print("http config promoted:", res[0].get("success"), res[0].get("error", ""))
         await setup(api)
         await asyncio.sleep(3)
+        print("Dialog:")
+        fails = await dialog_checks(api)
         print("Scenarios:")
-        fails = await scenarios(api)
+        fails += await scenarios(api)
         if SHOTS:
             print("Screenshots:")
             fails += await screenshots(api, session, tok)

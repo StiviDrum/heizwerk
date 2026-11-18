@@ -33,12 +33,11 @@ Stand nach jeder Aufgabe aktualisieren. Branch: `claude/heizwerk-0.1`.
 - [x] Nur beobachten schreibt nie ins Ziel
 - [x] Tests + Dev-Test gegen echtes Zeitwerk (Zeitwerk-Karte zeigt „Manuell … von Heizwerk-Wert“)
 
-## Backlog – wartet auf „go“ von Steven
-Nichts davon wird umgesetzt, bevor Steven „go“ gibt (ganz oder für einzelne Punkte).
-Danach je Punkt: umsetzen → Tests → Dev-Test → Push → CI grün → Tag (automatisch).
+## 0.3 – Backlog umgesetzt („go“ Steven 2026-11-18, Subagents Backend + Frontend)
+Künftige Wünsche wieder hier sammeln und erst nach „go“ umsetzen.
 
 ### B1 – Raum-Dialog: Erklärung zu jeder Einstellung
-- [ ] Jede Einstellung (Raum **und** Hausoptionen) bekommt einen Erklärtext (de/en):
+- [x] Jede Einstellung (Raum **und** Hausoptionen) bekommt einen Erklärtext (de/en):
       wozu, Standardwert, Empfehlung (z. B. „TRVZB: externer Eingang statt Offset“).
 - Hinweis: Der HA-Konfigurationsdialog kennt kein „?“-Symbol mit Tooltip. HA zeigt
   Erklärungen als kurzen Hilfetext direkt unter dem Feld (`data_description`) –
@@ -46,29 +45,29 @@ Danach je Punkt: umsetzen → Tests → Dev-Test → Push → CI grün → Tag (
   Abschnittsbeschreibung (B3) und in die Doku (Link im Dialog).
 
 ### B2 – Pflichtfelder oben, optionale darunter
-- [ ] Reihenfolge: Raumname, Thermostate, Raumfühler, Zeitwerk-Ziel (empfohlen)
+- [x] Reihenfolge: Raumname, Thermostate, Raumfühler, Zeitwerk-Ziel (empfohlen)
       oben; alles Optionale darunter in Abschnitten (B3).
-- [ ] Gleiches Prinzip für die Hausoptionen.
+- [x] Gleiches Prinzip für die Hausoptionen.
 
 ### B3 – Einklappbare Abschnitte im Dialog
-- [ ] Abschnitte (HA `section`, standardmäßig zugeklappt): „Zeitwerk“, „Raumklima“,
+- [x] Abschnitte (HA `section`, standardmäßig zugeklappt): „Zeitwerk“, „Raumklima“,
       „Fenster & Sperren“, „Regelung (erweitert)“, „Grenzen“.
-- [ ] Datenmigration: Abschnitte verschachteln die gespeicherten Werte; bestehende
+- [x] Datenmigration: Abschnitte verschachteln die gespeicherten Werte; bestehende
       Räume müssen beim Update ohne Neuanlage weiterlaufen (Migration + Test).
 
 ### B4 – Große Karte: Zieltemperatur am Kreis ziehen
-- [ ] Ziel-Punkt auf dem Dial mit Finger/Maus ziehbar (Pointer-Events, Raster =
+- [x] Ziel-Punkt auf dem Dial mit Finger/Maus ziehbar (Pointer-Events, Raster =
       Schrittweite 0,5 K, Skala `dial_min`–`dial_max`), Wert während des Ziehens
       groß anzeigen, beim Loslassen einmal `heizwerk.set_manual` (Dauer wie ±).
-- [ ] Bedienbar ohne Ziehen: Tastatur (Pfeiltasten) und ± bleiben; Touch-Ziel
+- [x] Bedienbar ohne Ziehen: Tastatur (Pfeiltasten) und ± bleiben; Touch-Ziel
       ≥ 44 px; kein Scrollen der Seite während des Ziehens.
-- [ ] Tests: Winkel → Temperatur (vitest), im echten Frontend per Screenshot.
+- [x] Tests: Winkel → Temperatur (vitest), im echten Frontend per Screenshot.
 
 ### Vorschläge aus der Raum-Erklärung (2026-11-18) – nur bei „go“
-- [ ] Zeitwerk-Plan automatisch aus dem Zeitwerk-Ziel ermitteln (Feld entfällt).
-- [ ] „Sollwert ohne Zeitwerk-Ziel“ und „Frostschutztemperatur“ nur zeigen, wenn sie
-      wirken (braucht zweiten Dialogschritt – HA blendet Felder nicht dynamisch aus).
-- [ ] Warnung, wenn Offset-Regelung und externer Temperatureingang zugleich gesetzt sind.
+- [x] Zeitwerk-Plan automatisch aus dem Zeitwerk-Ziel ermitteln (Feld entfällt).
+- [x] „Sollwert ohne Zeitwerk-Ziel“ und „Frostschutztemperatur“ nur zeigen, wenn sie
+      wirken – umgesetzt mit HA-2026.11-Sichtbarkeitsbedingungen (`visible`), ohne zweiten Schritt.
+- [x] Warnung, wenn Offset-Regelung und externer Temperatureingang zugleich gesetzt sind.
 
 ## Offen / später
 - [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bewusst nicht in 0.1
@@ -77,6 +76,11 @@ Danach je Punkt: umsetzen → Tests → Dev-Test → Push → CI grün → Tag (
 - [ ] Produktiv-Einsatz: nur nach Freigabe (Hausregeln 1.4), zuerst „Nur beobachten“ parallel zu den bestehenden Automationen
 
 ## Erkenntnisse
+- HA 2026.11: Formulare können Felder abhängig von anderen Feldern zeigen
+  (`data_entry_flow.Optional(..., visible=...)`); Bedingungen wirken nur innerhalb
+  derselben Ebene/desselben Abschnitts. Fehler in Abschnitten werden über den
+  Abschnittsschlüssel gemeldet.
+- HA 2026.11 ersetzt voluptuous durch probatio (Alias in `homeassistant/__init__`).
 - HA 2026.11: `ClimateEntity.temperature_unit/current_temperature/target_temperature`
   sind veraltet → `native_*` (Entfall 2027.11).
 - Zeitwerk erkennt manuelle Änderungen am Ziel über den Context. Seit 0.2 nutzt
