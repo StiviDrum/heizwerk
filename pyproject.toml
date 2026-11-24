@@ -1,6 +1,6 @@
 [project]
 name = "heizwerk"
-version = "0.5.1"
+version = "0.5.2"
 description = "Room heating control for Home Assistant (Zeitwerk plans, Heizwerk controls)"
 requires-python = ">=3.14.2"
 license = "MIT"

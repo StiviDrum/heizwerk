@@ -503,6 +503,41 @@ async def features_check(api: Api) -> list[str]:
         "Fortsetzen nach Drehen",
     )
 
+    # 0.5.2 incident: Zigbee2MQTT reports the old stored set-point in a
+    # separate message right after Heizwerk's command -> must not be a knob.
+    trv0 = await api.state("climate.trv_bad")
+    stale = trv0["attributes"]["temperature"]
+    await api.call("heizwerk", "set_manual", entity_id=bad, temperature=24)
+    await asyncio.sleep(12)  # debounce -> Heizwerk sends 23.5 to the TRV
+    trv1 = await api.state("climate.trv_bad")
+    check(trv1["attributes"]["temperature"] == 23.5, "Heizwerk sendet 23,5 an TRV Bad")
+    await asyncio.sleep(0.2)
+    await api.post(
+        "/api/states/climate.trv_bad",
+        {"state": "heat", "attributes": {**trv1["attributes"], "temperature": stale}},
+    )
+    await asyncio.sleep(2)
+    st = await api.state(bad)
+    a = st["attributes"]
+    show(
+        "Bad nach veralteter TRV-Meldung",
+        st,
+        "status",
+        "temperature",
+        "manual_source",
+        "last_knob",
+    )
+    check(
+        a.get("manual_source") == "heizwerk" and a["temperature"] == 24,
+        "Veraltete Meldung kein Handwert",
+    )
+    check(
+        (a.get("last_knob") or {}).get("reason") == "after_own_command",
+        "Grund: after_own_command",
+    )
+    await api.call("heizwerk", "resume", entity_id=bad)
+    await asyncio.sleep(2)
+
     # Two-point in the (observe-only) kitchen
     res = await reconfigure_room(
         api, "Küche", lambda d: d["regulation"].update(regulation="two_point")
