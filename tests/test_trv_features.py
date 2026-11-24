@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -241,19 +242,6 @@ async def test_knob_during_lock_is_ignored(
     assert attrs["status"] == "locked"
 
 
-async def test_knob_two_point_is_a_delta(
-    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
-) -> None:
-    """Review #1: the TRV shows 24 °C in two-point; turning down 0.5 = -0.5 K."""
-    await setup_room(regulation="two_point")
-    await _tick(hass, freezer, 11)
-    assert hass.states.get(TRV).attributes["temperature"] == 24.0
-    await _tick(hass, freezer, 40)
-    trv_state(hass, "heat", 23.5)
-    await hass.async_block_till_done()
-    assert hass.states.get(CLIMATE).attributes["temperature"] == 21.5
-
-
 async def test_automation_writing_trv_is_not_a_knob(
     hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -347,9 +335,13 @@ async def test_select_issue_kept_on_reload_removed_with_entry(
 async def test_knob_several_clicks_quickly(
     hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
 ) -> None:
-    """Re-review: 20.5, 21.0, 21.5 reported 1 s apart -> 21.5 adopted, not reset."""
+    """Re-review: 20.5, 21.0, 21.5 reported 1 s apart -> 21.5 adopted, not reset.
+
+    Since 0.5.2 reports within 30 s after an own command are ignored, so the
+    turn happens later."""
     await setup_room()
     await _tick(hass, freezer, 11)  # Heizwerk sent 21.5
+    await _tick(hass, freezer, 40)
     for value in (22.0, 22.5, 23.0):
         trv_state(hass, "heat", value)
         await _tick(hass, freezer, 1)
@@ -392,3 +384,354 @@ async def test_two_point_init_after_hass_started(
     attrs = hass.states.get(CLIMATE).attributes
     assert attrs["status"] == "heating"
     assert attrs["planned_commands"][0]["temperature"] == 24.0
+
+
+# --- 0.5.2: stale set-point after a mode switch (production incident) --------
+
+
+async def test_stale_setpoint_after_mode_switch_is_not_a_knob(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Z2M reports heat/30, then 0.2 s later the old stored 18 in a separate
+    message. Must not become a manual value (was: 18 + (18 - 30) = 6 °C)."""
+    events: list[Any] = []
+    hass.bus.async_listen("heizwerk_event", events.append)
+    trv_state(hass, "off", 18.0)
+    await setup_room(regulation="two_point", heat_setpoint=30.0, trv_manual="adopt")
+    calls["deaf"] = True  # we simulate the device reports ourselves
+    await _tick(hass, freezer, 11)  # Heizwerk: heat + 30
+    assert calls["temp"][-1].data["temperature"] == 30.0
+    trv_state(hass, "heat", 30.0)
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=0.2))
+    trv_state(hass, "heat", 18.0)
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["status"] != "manual"
+    assert attrs["temperature"] == 22.0
+    assert attrs["last_knob"]["result"] == "rejected"
+    assert attrs["last_knob"]["reason"] == "after_own_command"
+    assert events[-1].data["type"] == "knob_rejected"
+    calls["deaf"] = False
+    await _tick(hass, freezer, 11)  # own value sent again
+    assert calls["temp"][-1].data["temperature"] == 30.0
+
+
+async def test_stale_setpoint_in_setpoint_mode(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Same Z2M behaviour after a window closes (off -> heat) in set-point mode."""
+    trv_state(hass, "off", 16.0)
+    await setup_room()
+    calls["deaf"] = True
+    await _tick(hass, freezer, 11)
+    trv_state(hass, "heat", 21.5)
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=0.2))
+    trv_state(hass, "heat", 16.0)
+    await hass.async_block_till_done()
+    assert hass.states.get(CLIMATE).attributes["status"] != "manual"
+
+
+async def test_stale_value_after_window_is_rejected(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """A late report of the pre-command value is stale even after the window."""
+    trv_state(hass, "heat", 19.0)
+    await setup_room()
+    await _tick(hass, freezer, 11)  # 19 -> 21.5
+    await _tick(hass, freezer, 60)
+    trv_state(hass, "heat", 19.0)
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["status"] != "manual"
+    assert attrs["last_knob"]["reason"] == "stale_value"
+
+
+async def test_two_point_knob_always_reset(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    await setup_room(regulation="two_point", trv_manual="adopt")
+    await _tick(hass, freezer, 11)
+    await _tick(hass, freezer, 60)
+    trv_state(hass, "heat", 23.5)
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["status"] != "manual"
+    assert attrs["last_knob"]["reason"] == "two_point"
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).attributes["temperature"] == 24.0
+
+
+async def test_knob_below_minimum_rejected(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    await setup_room(knob_min_temperature=18.0)
+    await _tick(hass, freezer, 11)
+    await _tick(hass, freezer, 60)
+    trv_state(hass, "heat", 17.0)  # room target 17.5 < 18
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["status"] != "manual"
+    assert attrs["last_knob"]["reason"] == "below_minimum"
+
+
+async def test_knob_minimum_from_zeitwerk_plan(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    from homeassistant.core import SupportsResponse
+
+    async def get_plan(call: ServiceCall) -> dict[str, Any]:
+        return {
+            "plans": [
+                {
+                    "id": "heizung_bad",
+                    "profiles": [
+                        {
+                            "actions": [
+                                {
+                                    "action": "climate.set_temperature",
+                                    "target": {"entity_id": CLIMATE},
+                                    "data": {"temperature": t},
+                                }
+                            ]
+                        }
+                        for t in (22, 18)
+                    ],
+                }
+            ]
+        }
+
+    hass.services.async_register(
+        "zeitwerk", "get_plan", get_plan, supports_response=SupportsResponse.ONLY
+    )
+    await setup_room(zeitwerk_plan="heizung_bad")
+    await hass.async_start()
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, 11)
+    await _tick(hass, freezer, 60)
+    trv_state(hass, "heat", 16.5)  # room 17.0 < plan minimum 18
+    await hass.async_block_till_done()
+    assert hass.states.get(CLIMATE).attributes["last_knob"]["reason"] == "below_minimum"
+    await _tick(hass, freezer, 11)  # Heizwerk resets the TRV
+    await _tick(hass, freezer, 60)
+    trv_state(hass, "heat", 18.0)  # room 18.5 >= 18 -> adopted
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["status"] == "manual"
+    assert attrs["last_knob"]["result"] == "adopted"
+
+
+async def test_knob_jump_rejected(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    await setup_room()
+    await _tick(hass, freezer, 11)
+    await _tick(hass, freezer, 60)
+    trv_state(hass, "heat", 28.0)  # 21.5 -> 28: +6.5 K in one report
+    await hass.async_block_till_done()
+    assert hass.states.get(CLIMATE).attributes["last_knob"]["reason"] == "jump"
+
+
+async def test_retry_cap_and_issue(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """A thermostat that jumps back after every command: 3 attempts, then a
+    pause until the 10-minute window ends, plus a repair issue."""
+    trv_state(hass, "heat", 16.0)
+    await setup_room(trv_manual="reset")
+    for _ in range(6):
+        await _tick(hass, freezer, 11)  # Heizwerk sends 21.5
+        await _tick(hass, freezer, 31)
+        trv_state(hass, "heat", 16.0)  # device restores its own value
+        await hass.async_block_till_done()
+    assert len(calls["temp"]) == 3
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"trv_rejects_{TRV}")
+    assert issue is not None
+    trv_state(hass, "heat", 21.5)  # takes it over at last …
+    await _tick(hass, freezer, 60)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"trv_rejects_{TRV}") is not None
+    await _tick(hass, freezer, 70)  # … and keeps it for 2 minutes
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"trv_rejects_{TRV}") is None
+
+
+async def test_negative_upper_hysteresis(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Off already at target - 0.3 K (against overshoot)."""
+    await setup_room(regulation="two_point", hysteresis_low=0.8, hysteresis_high=-0.3)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "heat"
+    hass.states.async_set(ROOM_SENSOR, "21.7")  # >= 22 - 0.3
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "off"
+
+
+async def test_min_on_and_off_time(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    await setup_room(regulation="two_point", min_on_minutes=10, min_off_minutes=5)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "heat"
+    hass.states.async_set(ROOM_SENSOR, "22.5")  # would switch off
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "heat"  # min run 10 min
+    await _tick(hass, freezer, 10 * 60)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "off"
+    hass.states.async_set(ROOM_SENSOR, "20.0")  # would switch on
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "off"  # min pause 5 min
+    await _tick(hass, freezer, 5 * 60)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "heat"
+
+
+async def test_window_overrides_min_run(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    await setup_room(regulation="two_point", min_on_minutes=30)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "heat"
+    hass.states.async_set("binary_sensor.window_bad", "on")
+    await _tick(hass, freezer, 31)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "off"
+
+
+# --- 0.5.2 review findings ---------------------------------------------------
+
+
+async def test_turn_back_to_pre_command_value_later_is_adopted(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Review R1: the stale check only applies for 5 minutes after the command."""
+    trv_state(hass, "heat", 20.5)
+    await setup_room()
+    await _tick(hass, freezer, 11)  # 20.5 -> 21.5 (pre-command value 20.5)
+    await _tick(hass, freezer, 6 * 60)
+    trv_state(hass, "heat", 20.5)  # someone turns back to the old value
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["status"] == "manual"
+    assert attrs["manual_source"] == "thermostat"
+    assert attrs["temperature"] == 21.0
+
+
+async def test_no_commands_before_ha_started(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Review R2: thermostats may still be restoring – send only once started."""
+    from homeassistant.core import CoreState
+
+    hass.set_state(CoreState.starting)
+    await setup_room()
+    await _tick(hass, freezer, 11)
+    assert not calls["mode"] and not calls["temp"]
+    await hass.async_start()
+    await _tick(hass, freezer, 11)
+    assert calls["temp"][-1].data["temperature"] == 21.5
+
+
+async def test_two_point_init_on_first_available_trv(
+    hass: HomeAssistant, setup_room, calls
+) -> None:
+    """Review R2: TRVs appearing before HA started keep their heating state."""
+    from homeassistant.core import CoreState
+
+    hass.set_state(CoreState.starting)
+    hass.states.async_set(TRV, "unavailable")
+    hass.states.async_set(ROOM_SENSOR, "21.8")  # inside the band
+    await setup_room(regulation="two_point")
+    trv_state(hass, "heat", 24.0)  # MQTT restores the TRV (still starting)
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["planned_commands"][0]["temperature"] == 24.0
+
+
+async def test_no_min_off_hold_after_window(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Review R3: after airing the valve opens without waiting for min_off."""
+    await setup_room(regulation="two_point", min_off_minutes=15)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "heat"
+    hass.states.async_set("binary_sensor.window_bad", "on")
+    await _tick(hass, freezer, 31)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "off"
+    hass.states.async_set("binary_sensor.window_bad", "off")
+    await _tick(hass, freezer, 11)
+    await _tick(hass, freezer, 11)
+    assert hass.states.get(TRV).state == "heat"
+
+
+async def test_repeated_knob_turns_do_not_trip_the_retry_cap(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Review R4: a person turning the knob again and again is always reset."""
+    await setup_room(regulation="two_point")
+    await _tick(hass, freezer, 11)
+    for value in (23.0, 22.0, 21.0, 20.0, 19.0):
+        await _tick(hass, freezer, 40)
+        trv_state(hass, "heat", value)
+        await _tick(hass, freezer, 11)
+        assert hass.states.get(TRV).attributes["temperature"] == 24.0
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"trv_rejects_{TRV}") is None
+
+
+async def test_rejects_issue_cleared_on_reload(
+    hass: HomeAssistant, setup_room, calls
+) -> None:
+    """Review R5: no stale 'does not take over' notice after a restart."""
+    entry = await setup_room()
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"trv_rejects_{TRV}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="trv_rejects_command",
+    )
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        "trv_rejects_climate.removed",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="trv_rejects_command",
+    )
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    reg = ir.async_get(hass)
+    assert reg.async_get_issue(DOMAIN, f"trv_rejects_{TRV}") is None
+    assert reg.async_get_issue(DOMAIN, "trv_rejects_climate.removed") is None
+
+
+async def test_below_minimum_without_plan(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Without plan and option the room minimum is the bound (not clamped away)."""
+    await setup_room(min_temp=18.0)
+    await _tick(hass, freezer, 11)
+    await _tick(hass, freezer, 60)
+    trv_state(hass, "heat", 17.0)  # room 17.5 < 18
+    await hass.async_block_till_done()
+    attrs = hass.states.get(CLIMATE).attributes
+    assert attrs["status"] != "manual"
+    assert attrs["last_knob"]["reason"] == "below_minimum"
+
+
+async def test_device_jumping_back_still_hits_the_cap(
+    hass: HomeAssistant, setup_room, calls, freezer: FrozenDateTimeFactory
+) -> None:
+    """Re-review: a TRV resetting itself by > 5 K after each command is a device
+    problem – the cap must still apply (jump does not reset the counter)."""
+    await setup_room(trv_manual="reset")
+    for _ in range(6):
+        await _tick(hass, freezer, 11)  # Heizwerk sends 21.5
+        await _tick(hass, freezer, 40)
+        trv_state(hass, "heat", 7.0)  # device falls back to its frost value
+        await hass.async_block_till_done()
+    assert len(calls["temp"]) == 3
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"trv_rejects_{TRV}") is not None

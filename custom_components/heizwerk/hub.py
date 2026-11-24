@@ -57,12 +57,14 @@ class HeizwerkHub:
             for r in self.rooms.values()
             for sel in r.sensor_selects
         }
+        # trv_rejects_* are cleared by the rooms on start anyway; any left
+        # over belongs to a thermostat that is no longer part of a room.
         for domain, issue_id in list(ir.async_get(self.hass).issues):
+            if domain != DOMAIN:
+                continue
             if (
-                domain == DOMAIN
-                and issue_id.startswith("sensor_select_")
-                and issue_id not in known
-            ):
+                issue_id.startswith("sensor_select_") and issue_id not in known
+            ) or issue_id.startswith("trv_rejects_"):
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     @callback

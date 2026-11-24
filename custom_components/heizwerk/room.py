@@ -26,6 +26,7 @@ from homeassistant.const import (
 from homeassistant.core import (
     CALLBACK_TYPE,
     Context,
+    CoreState,
     Event,
     EventStateChangedData,
     HomeAssistant,
@@ -58,9 +59,12 @@ from .const import (
     CONF_HUMIDITY_THRESHOLD,
     CONF_HYSTERESIS_HIGH,
     CONF_HYSTERESIS_LOW,
+    CONF_KNOB_MIN,
     CONF_LOCK_ENTITIES,
     CONF_LOCK_MODE,
     CONF_MAX_TEMP,
+    CONF_MIN_OFF,
+    CONF_MIN_ON,
     CONF_MIN_TEMP,
     CONF_MOLD_SENSOR,
     CONF_NAME,
@@ -90,6 +94,8 @@ from .const import (
     DEFAULT_HYSTERESIS_HIGH,
     DEFAULT_HYSTERESIS_LOW,
     DEFAULT_MAX_TEMP,
+    DEFAULT_MIN_OFF,
+    DEFAULT_MIN_ON,
     DEFAULT_MIN_TEMP,
     DEFAULT_SUMMER_LOCK_MINUTES,
     DEFAULT_SUMMER_LOCK_TEMPERATURE,
@@ -140,6 +146,16 @@ REMOTE_TEMPERATURE = "remote_temperature"
 SELECT_ISSUE_MINUTES = 5
 # A set-point report within this time after our own command is an echo.
 KNOB_ECHO_SECONDS = 30
+# A single knob report changing the set-point by more than this is implausible.
+KNOB_MAX_STEP = 5.0
+MAX_RETRIES = 3
+RETRY_WINDOW = timedelta(minutes=10)
+RETRY_STABLE = timedelta(minutes=2)
+# A late report of the pre-command value counts as stale for this long.
+STALE_SECONDS = 5 * 60
+# Rejections that come from a person, not from the device's own reports.
+# ("jump" is not: a change > 5 K is a device resetting itself, not a person.)
+_USER_REJECTIONS = {"two_point", "reset_mode", "below_minimum"}
 _INVALID = {STATE_UNAVAILABLE, STATE_UNKNOWN, "", None}
 
 
@@ -150,6 +166,19 @@ def _float(value: Any) -> float | None:
         return float(value)
     except TypeError, ValueError:
         return None
+
+
+def _action_temperature(action: Any, entity_id: str) -> float | None:
+    """Temperature a Zeitwerk profile action sends to entity_id, if any."""
+    if not isinstance(action, Mapping):
+        return None
+    target = action.get("target") or {}
+    ids = target.get("entity_id", action.get("entity_id", []))
+    ids = [ids] if isinstance(ids, str) else list(ids or [])
+    if entity_id not in ids:
+        return None
+    data = action.get("data") or {}
+    return _float(data.get(ATTR_TEMPERATURE, data.get("value")))
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -293,6 +322,15 @@ class RoomController:
         self._two_point_on = False
         # Last set-point sent per thermostat (to tell echoes from knob turns).
         self._sent: dict[str, tuple[float, datetime]] = {}
+        # Thermostat set-point before our last command (stale-report check).
+        self._pre_command: dict[str, float] = {}
+        # Repeated identical commands a thermostat did not take over.
+        self._retries: dict[str, tuple[tuple[str, float | None], int, datetime]] = {}
+        self._match_since: dict[str, datetime] = {}
+        self._plan_min: float | None = None
+        self._two_point_changed: datetime | None = None
+        self._two_point_initialised = False
+        self.last_knob: dict[str, Any] | None = None
         self._select_bad_since: dict[str, datetime] = {}
 
     # --- Configuration helpers --------------------------------------------
@@ -365,6 +403,10 @@ class RoomController:
         now = dt_util.utcnow()
         self._discover_device_entities()
         self._subscribe()
+        for trv in self.trv_ids:
+            # Counters start fresh; an old "does not take over" notice would
+            # otherwise never disappear.
+            ir.async_delete_issue(self.hass, DOMAIN, f"trv_rejects_{trv}")
         self._init_two_point()
         for select in self.sensor_selects:
             # Keep an existing issue while still wrong, drop it when fixed.
@@ -398,11 +440,40 @@ class RoomController:
     def _async_hass_started(self, _hass: HomeAssistant) -> None:
         # Thermostats (MQTT) are often restored only now.
         self._init_two_point()
+        self._two_point_initialised = True
         self.async_update()
         if not self.plan:
             self.hass.async_create_task(
                 self._async_detect_plan(), f"heizwerk detect plan {self.name}"
             )
+        else:
+            self.hass.async_create_task(
+                self._async_load_plan_min(), f"heizwerk plan minimum {self.name}"
+            )
+
+    async def _async_load_plan_min(self) -> None:
+        """Lowest set-point the Zeitwerk plan sends to this room (knob bound)."""
+        if not self.plan or not self.hass.services.has_service("zeitwerk", "get_plan"):
+            return
+        try:
+            response = await self.hass.services.async_call(
+                "zeitwerk",
+                "get_plan",
+                {"plan": self.plan},
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as err:
+            _LOGGER.debug("%s: zeitwerk.get_plan failed: %s", self.name, err)
+            return
+        values = [
+            v
+            for plan in (response or {}).get("plans", [])
+            for profile in plan.get("profiles", [])
+            for action in profile.get("actions", [])
+            if (v := _action_temperature(action, self.climate_entity_id)) is not None
+        ]
+        self._plan_min = min(values) if values else None
 
     def _discover_device_entities(self) -> None:
         """Find external-temperature inputs and measuring-source selects.
@@ -458,6 +529,7 @@ class RoomController:
             self.plan = plan
             self._subscribe()
             self.async_update()
+            await self._async_load_plan_min()
 
     @callback
     def async_stop(self) -> None:
@@ -633,15 +705,14 @@ class RoomController:
         self.async_update()
 
     def _knob_turned(self, event: Event[EventStateChangedData], now: datetime) -> bool:
-        """Handle a set-point changed at the thermostat itself (not by Heizwerk).
+        """Handle a set-point change reported by a thermostat.
 
-        True if adopted as manual override. Otherwise the normal evaluation
-        runs and, if needed, sends Heizwerk's value again ("reset").
+        True if adopted as manual override ("am Thermostat"). Otherwise the
+        normal evaluation runs and sends Heizwerk's value again. Every
+        decision is logged and reported as heizwerk_event (knob_adopted /
+        knob_rejected) and in the attribute last_knob.
         """
-        if self.observe_only or self._sending or self.trv_manual != TRV_MANUAL_ADOPT:
-            return False
-        if not self.enabled or self._locks(now):
-            # Locked (window, summer …): the thermostat is held at off / frost.
+        if self.observe_only or self._sending or not self.enabled or self._locks(now):
             return False
         old, new = event.data["old_state"], event.data["new_state"]
         if old is None or new is None or new.state in _INVALID or old.state in _INVALID:
@@ -655,29 +726,116 @@ class RoomController:
         if after is None or before is None or abs(after - before) < 1e-6:
             return False
         entity_id = event.data["entity_id"]
+        wanted = next(
+            (
+                c.temperature
+                for c in (self.decision.commands if self.decision else [])
+                if c.entity_id == entity_id
+            ),
+            None,
+        )
+        if wanted is not None and abs(wanted - after) < 1e-6:
+            return False  # the thermostat now agrees with Heizwerk – nothing to adopt
         sent = self._sent.get(entity_id)
-        if sent is not None and now - sent[1] < timedelta(seconds=KNOB_ECHO_SECONDS):
-            if abs(sent[0] - after) < 1e-6:
-                return False  # echo of our own command
-            if old.state != new.state:
-                return False  # mode switch by our command: TRV reports its old value
+        since = (now - sent[1]).total_seconds() if sent is not None else None
+        if (
+            since is not None
+            and since < KNOB_ECHO_SECONDS
+            and sent is not None
+            and abs(sent[0] - after) < 1e-6
+        ):
+            return False  # echo of our own command
+
+        def reject(reason: str) -> bool:
+            self._knob_report("knob_rejected", entity_id, before, after, since, reason)
+            return False
+
+        if since is not None and since < KNOB_ECHO_SECONDS:
+            # Zigbee2MQTT may send the TRV's previously stored set-point in a
+            # separate message right after our command (seen: 0.15–0.25 s).
+            return reject("after_own_command")
+        stale = self._pre_command.get(entity_id)
+        if (
+            stale is not None
+            and since is not None
+            and since < STALE_SECONDS
+            and abs(stale - after) < 1e-6
+        ):
+            return reject("stale_value")
+        if self.regulation == REGULATION_TWO_POINT:
+            # The knob shows the heat set-point (e.g. 30) or frost, not the
+            # room temperature: never a room target.
+            return reject("two_point")
+        if self.trv_manual != TRV_MANUAL_ADOPT:
+            return reject("reset_mode")
+        if abs(after - before) > KNOB_MAX_STEP:
+            return reject("jump")
         trv = next((t for t in self._trv_infos() if t.entity_id == entity_id), None)
         if trv is None:
             return False
-        if self.regulation == REGULATION_TWO_POINT:
-            # The thermostat shows the heat set-point, not the room target:
-            # take the change as a delta.
-            target = round_to_step(self.base_target + (after - before), 0.5)
-        else:
-            current, _ = self._room_temperature(self._trv_infos())
-            inputs = self._inputs(current, [])
-            target = round_to_step(room_target_from_trv(after, inputs, trv), 0.5)
-        target = self._clamp(target)
+        current, _ = self._room_temperature(self._trv_infos())
+        inputs = self._inputs(current, [])
+        raw = round_to_step(room_target_from_trv(after, inputs, trv), 0.5)
+        if raw < self.knob_min - 1e-6:
+            return reject("below_minimum")
+        target = self._clamp(raw)
         if abs(target - self.base_target) < 1e-6:
             return False
-        _LOGGER.debug("%s: knob turned at %s to %s", self.name, entity_id, after)
+        self._knob_report("knob_adopted", entity_id, before, after, since, None, target)
         self.set_manual(target, None, None, source="thermostat")
         return True
+
+    @property
+    def knob_min(self) -> float:
+        """Lowest plausible room target from a knob turn."""
+        configured = _float(self.config.get(CONF_KNOB_MIN))
+        if configured is not None:
+            return configured
+        if self._plan_min is not None:
+            return self._plan_min
+        return self.min_temp
+
+    def _knob_report(  # noqa: PLR0917
+        self,
+        kind: str,
+        entity_id: str,
+        before: float,
+        after: float,
+        since: float | None,
+        reason: str | None,
+        target: float | None = None,
+    ) -> None:
+        info = {
+            "time": dt_util.utcnow().isoformat(),
+            "result": "adopted" if kind == "knob_adopted" else "rejected",
+            "reason": reason,
+            "trv": entity_id,
+            "value": after,
+            "before": before,
+            "delta": round(after - before, 2),
+            "target": target,
+            "seconds_since_command": None if since is None else round(since, 2),
+        }
+        self.last_knob = info
+        # Someone keeps turning the knob: resetting it again is wanted and must
+        # not run into the cap meant for unresponsive thermostats.
+        if (
+            kind == "knob_rejected"
+            and reason in _USER_REJECTIONS
+            and self._retries.pop(entity_id, None) is not None
+        ):
+            ir.async_delete_issue(self.hass, DOMAIN, f"trv_rejects_{entity_id}")
+        _LOGGER.info(
+            "%s: thermostat %s %s -> %s (delta %+.1f K, %s s after own command): %s",
+            self.name,
+            entity_id,
+            before,
+            after,
+            after - before,
+            info["seconds_since_command"],
+            f"adopted as {target}" if target is not None else f"rejected ({reason})",
+        )
+        self._fire(kind, **{k: v for k, v in info.items() if k != "time"})
 
     def _locks(self, now: datetime) -> list[str]:
         locks: list[str] = []
@@ -753,6 +911,9 @@ class RoomController:
         now = dt_util.utcnow()
         trvs = self._trv_infos()
         self._expire_manual(now)
+        if not self._two_point_initialised and any(t.available for t in trvs):
+            self._init_two_point()
+            self._two_point_initialised = True
         target = self.base_target
         zeitwerk_manual, _ = self.zeitwerk_manual()
         manual_active = self.manual is not None or zeitwerk_manual
@@ -761,7 +922,21 @@ class RoomController:
 
         inputs = self._inputs(current, trvs, locks, manual_active)
         inputs.target = self._clamp(target)
+        if locks or not self.enabled or current is None:
+            # Forced off (lock, room off, no room temperature): the next switch
+            # must not be held by a minimum run/pause from before.
+            self._two_point_changed = None
+        if self._two_point_changed is not None:
+            inputs.two_point_elapsed = (now - self._two_point_changed).total_seconds()
         decision = decide(inputs)
+        if (
+            self.regulation == REGULATION_TWO_POINT
+            and not locks
+            and self.enabled
+            and current is not None
+            and decision.two_point_on != self._two_point_on
+        ):
+            self._two_point_changed = now
         self._two_point_on = decision.two_point_on
         changed = [c.as_dict() for c in decision.commands] != [
             c.as_dict() for c in self.planned
@@ -777,6 +952,7 @@ class RoomController:
         self._push_external(now, current, source)
 
         pending = pending_commands(decision.commands, trvs)
+        self._clear_retries(now, trvs, decision.commands)
         _LOGGER.debug(
             "%s: status=%s pending=%s debounce=%s trvs=%s",
             self.name,
@@ -829,6 +1005,9 @@ class RoomController:
                 self.config.get(CONF_HEAT_SETPOINT, DEFAULT_HEAT_SETPOINT)
             ),
             two_point_on=self._two_point_on,
+            min_on_seconds=60.0 * float(self.config.get(CONF_MIN_ON, DEFAULT_MIN_ON)),
+            min_off_seconds=60.0
+            * float(self.config.get(CONF_MIN_OFF, DEFAULT_MIN_OFF)),
         )
 
     async def _async_debounced(self, _now: datetime) -> None:
@@ -840,6 +1019,9 @@ class RoomController:
         """Send commands that differ from the thermostats' state."""
         if self.observe_only or self.decision is None:
             return
+        if self.hass.state is not CoreState.running:
+            # Thermostats may still be restoring; HA-started re-evaluates.
+            return
         pending = pending_commands(self.decision.commands, self._trv_infos())
         if not pending:
             return
@@ -847,18 +1029,25 @@ class RoomController:
         trvs = {t.entity_id: t for t in self._trv_infos()}
         self._sending = True
         try:
-            await self._async_send_commands(pending, trvs, context)
+            sent = await self._async_send_commands(pending, trvs, context)
         finally:
             self._sending = False
-        _LOGGER.debug("%s: sent %s", self.name, [c.as_dict() for c in pending])
-        self.last_sync = dt_util.utcnow()
+        if sent:
+            _LOGGER.debug("%s: sent %s", self.name, [c.as_dict() for c in sent])
+            self.last_sync = dt_util.utcnow()
         self.async_update(debounce=False)
 
     async def _async_send_commands(
         self, pending: list[Command], trvs: dict[str, TrvInfo], context: Context
-    ) -> None:
+    ) -> list[Command]:
+        now = dt_util.utcnow()
+        sent: list[Command] = []
         for cmd in pending:
             trv = trvs[cmd.entity_id]
+            if not self._retry_allowed(cmd, now):
+                continue
+            if trv.setpoint is not None:
+                self._pre_command[cmd.entity_id] = trv.setpoint
             try:
                 if trv.hvac_mode != cmd.hvac_mode:
                     previous = self._sent.get(cmd.entity_id)
@@ -889,6 +1078,63 @@ class RoomController:
                 _LOGGER.warning(
                     "%s: command to %s failed: %s", self.name, cmd.entity_id, err
                 )
+            else:
+                sent.append(cmd)
+        return sent
+
+    def _retry_allowed(self, cmd: Command, now: datetime) -> bool:
+        """Send the same command at most MAX_RETRIES times per RETRY_WINDOW."""
+        key = (cmd.hvac_mode, cmd.temperature)
+        last = self._retries.get(cmd.entity_id)
+        if last is None or last[0] != key or now - last[2] > RETRY_WINDOW:
+            self._retries[cmd.entity_id] = (key, 1, now)
+            return True
+        count = last[1] + 1
+        self._retries[cmd.entity_id] = (key, count, last[2])
+        if count <= MAX_RETRIES:
+            return True
+        if count == MAX_RETRIES + 1:
+            _LOGGER.warning(
+                "%s: %s does not take over %s after %s attempts – pausing until %s",
+                self.name,
+                cmd.entity_id,
+                cmd.as_dict(),
+                MAX_RETRIES,
+                (last[2] + RETRY_WINDOW).isoformat(),
+            )
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"trv_rejects_{cmd.entity_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="trv_rejects_command",
+                translation_placeholders={
+                    "trv": cmd.entity_id,
+                    "room": self.name,
+                    "command": str(cmd.as_dict()),
+                },
+            )
+        return False
+
+    def _clear_retries(
+        self, now: datetime, trvs: list[TrvInfo], commands: list[Command]
+    ) -> None:
+        """Reset counter / issue once a thermostat keeps its command 2 minutes.
+
+        A thermostat that takes the value and jumps back seconds later must
+        not reset the counter, otherwise the cap never applies.
+        """
+        open_ids = {c.entity_id for c in pending_commands(commands, trvs)}
+        for entity_id in list(self._retries):
+            if entity_id in open_ids:
+                self._match_since.pop(entity_id, None)
+                continue
+            since = self._match_since.setdefault(entity_id, now)
+            if now - since >= RETRY_STABLE:
+                del self._retries[entity_id]
+                self._match_since.pop(entity_id, None)
+                ir.async_delete_issue(self.hass, DOMAIN, f"trv_rejects_{entity_id}")
 
     def _push_external(self, now: datetime, current: float | None, source: str) -> None:
         """Send the room temperature to the thermostats' external input."""
@@ -1103,6 +1349,7 @@ class RoomController:
             "wall_source": wall_source,
             "wall_critical_temperature": wall_critical,
             "regulation": self.regulation,
+            "last_knob": self.last_knob,
             "external_inputs": self.external_ids,
             "wall_humidity": wall_humidity,
             "mold_level": mold_level(wall_humidity),
@@ -1180,6 +1427,22 @@ class RoomController:
             candidates.append(self.summer_since + timedelta(minutes=minutes))
         if self.manual is not None and self.manual.until is not None:
             candidates.append(self.manual.until)
+        if (
+            self._two_point_changed is not None
+            and self.regulation == REGULATION_TWO_POINT
+        ):
+            # The hold that applies to the current state (run vs. pause).
+            hold = float(
+                self.config.get(CONF_MIN_ON, DEFAULT_MIN_ON)
+                if self._two_point_on
+                else self.config.get(CONF_MIN_OFF, DEFAULT_MIN_OFF)
+            )
+            if hold:
+                candidates.append(self._two_point_changed + timedelta(minutes=hold))
+        for _key, _count, first in self._retries.values():
+            candidates.append(first + RETRY_WINDOW)
+        for since in self._match_since.values():
+            candidates.append(since + RETRY_STABLE)
         for since in self._select_bad_since.values():
             candidates.append(since + timedelta(minutes=SELECT_ISSUE_MINUTES))
         if self.trv_unavailable_since is not None and not self.trv_event_sent:

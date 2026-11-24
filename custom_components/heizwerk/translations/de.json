@@ -155,7 +155,7 @@
             },
             "regulation": {
               "name": "Regelung (erweitert)",
-              "description": "Wie Sollwert und Raumtemperatur an die Thermostate gehen. Entweder Raumtemperatur senden oder Offset, nie beides.",
+              "description": "Wie Sollwert und Raumtemperatur an die Thermostate gehen. Entweder Raumtemperatur senden oder Offset, nie beides. Bei Zweipunkt wird Drehen am Thermostat immer zurückgesetzt.",
               "data": {
                 "regulation": "Regelung",
                 "send_temperature": "Raumtemperatur an Thermostate senden",
@@ -163,16 +163,22 @@
                 "hysteresis_low": "Hysterese unten",
                 "hysteresis_high": "Hysterese oben",
                 "heat_setpoint": "Thermostat-Sollwert beim Heizen",
-                "trv_manual": "Drehen am Thermostat"
+                "min_on_minutes": "Mindestlaufzeit Ventil",
+                "min_off_minutes": "Mindestpause Ventil",
+                "trv_manual": "Drehen am Thermostat",
+                "knob_min_temperature": "Handwerte am Thermostat ab"
               },
               "data_description": {
-                "regulation": "Sollwert: das Thermostat regelt selbst (empfohlen). Offset: addiert Thermostat-Ist minus Raumfühler, nur ohne Senden der Raumtemperatur. Zweipunkt: Ventil auf/zu nach Hysterese.",
+                "regulation": "Sollwert: das Thermostat regelt selbst (empfohlen). Offset: addiert Thermostat-Ist minus Raumfühler, nur ohne Senden der Raumtemperatur. Zweipunkt: Ventil auf/zu nach Hysterese; Drehen am Thermostat wird dabei immer zurückgesetzt.",
                 "send_temperature": "Heizwerk findet den externen Temperatureingang (number.…_external_temperature_input) jedes Thermostats selbst und sendet den Wert des Raumfühlers (nur mit Raumfühler). Sonoff TRVZB: Messquelle remote_temperature in Zigbee2MQTT. Standard an.",
                 "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K. Standard 0; beim Senden der Raumtemperatur 0 lassen.",
                 "hysteresis_low": "Heizen, wenn der Raum so weit unter dem Ziel liegt. Standard 0,5 K.",
-                "hysteresis_high": "Heizen beenden, wenn der Raum Ziel plus diesen Wert erreicht. Standard 0 K.",
+                "hysteresis_high": "Aus ab Soll + Wert; negativ = schon vor dem Soll aus (gegen Überschwingen). Standard 0 K.",
                 "heat_setpoint": "Wird beim Heizen ans Thermostat gesendet, damit das Ventil ganz öffnet. Standard 24 °C.",
-                "trv_manual": "Übernehmen: eine Änderung am Thermostat ist eine manuelle Übersteuerung wie über die Karte (Standard). Zurücksetzen: Heizwerk stellt seinen Wert wieder ein."
+                "min_on_minutes": "Mindestlauf/-pause des Ventils; 0 = aus. Fenster, Sperren und Raum aus wirken trotzdem sofort.",
+                "min_off_minutes": "Mindestlauf/-pause des Ventils; 0 = aus. Fenster, Sperren und Raum aus wirken trotzdem sofort.",
+                "trv_manual": "Übernehmen: eine Änderung am Thermostat ist eine manuelle Übersteuerung wie über die Karte (Standard). Zurücksetzen: Heizwerk stellt seinen Wert wieder ein. Bei Zweipunkt immer zurücksetzen.",
+                "knob_min_temperature": "Handwerte vom Thermostat unter diesem Wert werden verworfen. Leer = automatisch: niedrigster Zeitwerk-Profilwert, sonst Minimaler Sollwert."
               }
             },
             "limits": {
@@ -258,7 +264,7 @@
             },
             "regulation": {
               "name": "Regelung (erweitert)",
-              "description": "Wie Sollwert und Raumtemperatur an die Thermostate gehen. Entweder Raumtemperatur senden oder Offset, nie beides.",
+              "description": "Wie Sollwert und Raumtemperatur an die Thermostate gehen. Entweder Raumtemperatur senden oder Offset, nie beides. Bei Zweipunkt wird Drehen am Thermostat immer zurückgesetzt.",
               "data": {
                 "regulation": "Regelung",
                 "send_temperature": "Raumtemperatur an Thermostate senden",
@@ -266,16 +272,22 @@
                 "hysteresis_low": "Hysterese unten",
                 "hysteresis_high": "Hysterese oben",
                 "heat_setpoint": "Thermostat-Sollwert beim Heizen",
-                "trv_manual": "Drehen am Thermostat"
+                "min_on_minutes": "Mindestlaufzeit Ventil",
+                "min_off_minutes": "Mindestpause Ventil",
+                "trv_manual": "Drehen am Thermostat",
+                "knob_min_temperature": "Handwerte am Thermostat ab"
               },
               "data_description": {
-                "regulation": "Sollwert: das Thermostat regelt selbst (empfohlen). Offset: addiert Thermostat-Ist minus Raumfühler, nur ohne Senden der Raumtemperatur. Zweipunkt: Ventil auf/zu nach Hysterese.",
+                "regulation": "Sollwert: das Thermostat regelt selbst (empfohlen). Offset: addiert Thermostat-Ist minus Raumfühler, nur ohne Senden der Raumtemperatur. Zweipunkt: Ventil auf/zu nach Hysterese; Drehen am Thermostat wird dabei immer zurückgesetzt.",
                 "send_temperature": "Heizwerk findet den externen Temperatureingang (number.…_external_temperature_input) jedes Thermostats selbst und sendet den Wert des Raumfühlers (nur mit Raumfühler). Sonoff TRVZB: Messquelle remote_temperature in Zigbee2MQTT. Standard an.",
                 "correction": "Wird auf den Sollwert für die Thermostate addiert, z. B. −0,5 K. Standard 0; beim Senden der Raumtemperatur 0 lassen.",
                 "hysteresis_low": "Heizen, wenn der Raum so weit unter dem Ziel liegt. Standard 0,5 K.",
-                "hysteresis_high": "Heizen beenden, wenn der Raum Ziel plus diesen Wert erreicht. Standard 0 K.",
+                "hysteresis_high": "Aus ab Soll + Wert; negativ = schon vor dem Soll aus (gegen Überschwingen). Standard 0 K.",
                 "heat_setpoint": "Wird beim Heizen ans Thermostat gesendet, damit das Ventil ganz öffnet. Standard 24 °C.",
-                "trv_manual": "Übernehmen: eine Änderung am Thermostat ist eine manuelle Übersteuerung wie über die Karte (Standard). Zurücksetzen: Heizwerk stellt seinen Wert wieder ein."
+                "min_on_minutes": "Mindestlauf/-pause des Ventils; 0 = aus. Fenster, Sperren und Raum aus wirken trotzdem sofort.",
+                "min_off_minutes": "Mindestlauf/-pause des Ventils; 0 = aus. Fenster, Sperren und Raum aus wirken trotzdem sofort.",
+                "trv_manual": "Übernehmen: eine Änderung am Thermostat ist eine manuelle Übersteuerung wie über die Karte (Standard). Zurücksetzen: Heizwerk stellt seinen Wert wieder ein. Bei Zweipunkt immer zurücksetzen.",
+                "knob_min_temperature": "Handwerte vom Thermostat unter diesem Wert werden verworfen. Leer = automatisch: niedrigster Zeitwerk-Profilwert, sonst Minimaler Sollwert."
               }
             },
             "limits": {
@@ -426,6 +438,10 @@
     "sensor_select_not_remote": {
       "title": "Heizwerk: Thermostat {trv} misst nicht mit dem Raumfühler",
       "description": "Die Messquelle {select} steht auf „{state}“ statt auf remote_temperature. Bitte in Zigbee2MQTT oder HA zurückstellen (select.select_option mit remote_temperature). Heizwerk stellt sie nicht selbst um."
+    },
+    "trv_rejects_command": {
+      "title": "Heizwerk: Thermostat {trv} übernimmt den Befehl nicht",
+      "description": "Raum {room}: {trv} hat den Befehl {command} dreimal innerhalb von 10 Minuten nicht übernommen oder sofort wieder verworfen. Heizwerk pausiert die Wiederholungen bis zum Ende des 10-Minuten-Fensters und versucht es dann erneut.\n\nPrüfe Funkverbindung, Batterie und Kindersicherung des Thermostats. Der Hinweis verschwindet, sobald das Thermostat den Wert 2 Minuten lang hält."
     }
   }
 }

@@ -51,6 +51,10 @@ CONF_OUTDOOR_LIMIT: Final = "outdoor_limit"
 CONF_TRV_MANUAL: Final = "trv_manual"
 # Mold indicator sensor (% relative humidity at the wall).
 CONF_MOLD_SENSOR: Final = "mold_sensor"
+# Knob values below this are discarded; absent = automatic.
+CONF_KNOB_MIN: Final = "knob_min_temperature"
+CONF_MIN_ON: Final = "min_on_minutes"
+CONF_MIN_OFF: Final = "min_off_minutes"
 CONF_LOCK_ENTITIES: Final = "lock_entities"
 CONF_LOCK_MODE: Final = "lock_mode"
 CONF_FROST_TEMPERATURE: Final = "frost_temperature"
@@ -81,6 +85,8 @@ DEFAULT_HUMIDITY_THRESHOLD: Final = 60
 DEFAULT_HYSTERESIS_LOW: Final = 0.5
 DEFAULT_HYSTERESIS_HIGH: Final = 0.0
 DEFAULT_HEAT_SETPOINT: Final = 24.0
+DEFAULT_MIN_ON: Final = 0
+DEFAULT_MIN_OFF: Final = 0
 
 # --- Control timing ------------------------------------------------------
 DEBOUNCE_SECONDS: Final = 10.0

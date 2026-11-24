@@ -52,6 +52,8 @@ NEW_DEFAULTS: dict[str, Any] = {
     "hysteresis_high": 0.0,
     "heat_setpoint": 24.0,
     "trv_manual": "adopt",
+    "min_on_minutes": 0,
+    "min_off_minutes": 0,
 }
 LEGACY_INPUTS = ["number.trv_bad_external_temperature_input"]
 
@@ -438,7 +440,9 @@ async def test_two_point_fields(hass: HomeAssistant, house) -> None:
         "hysteresis_low": 0.3,
         "hysteresis_high": 0.2,
         "heat_setpoint": 26.0,
-        "trv_manual": "reset",
+        "trv_manual": "reset",  # hidden with two-point: ignored
+        "min_on_minutes": 5,
+        "min_off_minutes": 10,
     }
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], data
@@ -450,7 +454,10 @@ async def test_two_point_fields(hass: HomeAssistant, house) -> None:
     assert stored["hysteresis_low"] == 0.3
     assert stored["hysteresis_high"] == 0.2
     assert stored["heat_setpoint"] == 26.0
-    assert stored["trv_manual"] == "reset"
+    assert stored["trv_manual"] == "adopt"
+    assert stored["min_on_minutes"] == 5
+    assert stored["min_off_minutes"] == 10
+    assert isinstance(stored["min_on_minutes"], int)
 
     # Back to set-point: the two-point values are kept (hidden, not lost).
     result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
@@ -566,6 +573,67 @@ async def test_two_point_needs_room_sensor(hass: HomeAssistant, house) -> None:
     data["regulation"] = {"regulation": "two_point"}
     result = await _add_room(hass, entry, data)
     assert result["errors"] == {"regulation": "two_point_needs_sensor"}
+
+
+async def test_negative_hysteresis_high(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["regulation"] = {
+        "regulation": "two_point",
+        "hysteresis_low": 0.5,
+        "hysteresis_high": -0.2,
+    }
+    result = await _add_room(hass, entry, data)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["hysteresis_high"] == -0.2
+
+
+async def test_negative_hysteresis_too_small(hass: HomeAssistant, house) -> None:
+    entry = await _hub_entry(hass)
+    data = nested_room(observe_only=True)
+    data["regulation"] = {
+        "regulation": "two_point",
+        "hysteresis_low": 0.3,
+        "hysteresis_high": -0.2,
+    }
+    result = await _add_room(hass, entry, data)
+    assert result["errors"] == {"regulation": "hysteresis_too_small"}
+
+
+async def test_knob_min_temperature(hass: HomeAssistant, house) -> None:
+    """Optional; only kept with trv_manual adopt outside two-point."""
+    entry = await _hub_entry(hass)
+    result = await _add_room(hass, entry, nested_room(observe_only=True))
+    assert "knob_min_temperature" not in result["data"]
+    await hass.async_block_till_done()
+    subentry_id = next(iter(entry.subentries))
+
+    async def reconfigure(regulation: dict[str, Any]) -> dict[str, Any]:
+        result = await entry.start_subentry_reconfigure_flow(hass, subentry_id)
+        data = nested_room(observe_only=True)
+        data["regulation"] = regulation
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], data
+        )
+        assert result["reason"] == "reconfigure_successful"
+        await hass.async_block_till_done()
+        return dict(entry.subentries[subentry_id].data)
+
+    stored = await reconfigure({"trv_manual": "adopt", "knob_min_temperature": 15})
+    assert stored["knob_min_temperature"] == 15
+    # Hidden (reset): submitted value ignored, stored one kept.
+    stored = await reconfigure({"trv_manual": "reset", "knob_min_temperature": 9})
+    assert stored["trv_manual"] == "reset"
+    assert stored["knob_min_temperature"] == 15
+    # Hidden (two-point): trv_manual and knob_min keep their stored values.
+    stored = await reconfigure(
+        {"regulation": "two_point", "trv_manual": "adopt", "knob_min_temperature": 9}
+    )
+    assert stored["trv_manual"] == "reset"
+    assert stored["knob_min_temperature"] == 15
+    # Visible and cleared: removed (= automatic).
+    stored = await reconfigure({"trv_manual": "adopt"})
+    assert "knob_min_temperature" not in stored
 
 
 async def test_two_point_hysteresis_too_small(hass: HomeAssistant, house) -> None:
@@ -848,6 +916,24 @@ def test_visibility_conditions_serialized(hass: HomeAssistant) -> None:
     assert schedule["resume_action"]["selector"] == {"action": {}}
     limits = [field["name"] for field in by_name["limits"]["schema"]]
     assert limits == ["default_target", "min_temp", "max_temp"]
+    regulation = {f["name"]: f for f in by_name["regulation"]["schema"]}
+    two_point = {"field": "regulation", "value": "two_point"}
+    not_two_point = {"field": "regulation", "operator": "not_eq", "value": "two_point"}
+    for name in (
+        "hysteresis_low",
+        "hysteresis_high",
+        "heat_setpoint",
+        "min_on_minutes",
+        "min_off_minutes",
+    ):
+        assert regulation[name]["visible"] == two_point, name
+    assert regulation["trv_manual"]["visible"] == not_two_point
+    assert regulation["knob_min_temperature"]["visible"] == [
+        {"field": "trv_manual", "value": "adopt"},
+        not_two_point,
+    ]
+    assert "visible" not in regulation["regulation"]
+    assert regulation["hysteresis_high"]["selector"]["number"]["min"] == -2
 
 
 @pytest.mark.parametrize("lang", ["de", "en"])

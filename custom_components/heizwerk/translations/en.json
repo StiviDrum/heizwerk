@@ -155,7 +155,7 @@
             },
             "regulation": {
               "name": "Regulation (advanced)",
-              "description": "How the set-point and the room temperature reach the thermostats. Use either sending the room temperature or offset, never both.",
+              "description": "How the set-point and the room temperature reach the thermostats. Use either sending the room temperature or offset, never both. With two-point a knob turn is always reset.",
               "data": {
                 "regulation": "Regulation",
                 "send_temperature": "Send room temperature to thermostats",
@@ -163,16 +163,22 @@
                 "hysteresis_low": "Hysteresis below",
                 "hysteresis_high": "Hysteresis above",
                 "heat_setpoint": "Thermostat set-point while heating",
-                "trv_manual": "Turning the thermostat knob"
+                "min_on_minutes": "Minimum valve on time",
+                "min_off_minutes": "Minimum valve off time",
+                "trv_manual": "Turning the thermostat knob",
+                "knob_min_temperature": "Accept knob values from"
               },
               "data_description": {
-                "regulation": "Set-point: thermostat regulates itself (recommended). Offset: adds thermostat reading minus room sensor, only without sending the room temperature. Two-point: valve open/closed by hysteresis.",
+                "regulation": "Set-point: thermostat regulates itself (recommended). Offset: adds thermostat reading minus room sensor, only without sending the room temperature. Two-point: valve open/closed by hysteresis; a knob turn is then always reset.",
                 "send_temperature": "Heizwerk finds each thermostat's external temperature input (number.…_external_temperature_input) and sends the room sensor value (only with a room sensor). Sonoff TRVZB: measuring source remote_temperature in Zigbee2MQTT. Default on.",
                 "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; keep 0 while sending the room temperature.",
                 "hysteresis_low": "Heat when the room is this much below the target. Default 0.5 K.",
-                "hysteresis_high": "Stop heating when the room reaches target plus this. Default 0 K.",
+                "hysteresis_high": "Off from target + value; negative = off before the target (against overshoot). Default 0 K.",
                 "heat_setpoint": "Sent to the thermostat while heating so the valve opens fully. Default 24 °C.",
-                "trv_manual": "Adopt: a change at the thermostat is a manual override like on the card (default). Reset: Heizwerk sets its own value again."
+                "min_on_minutes": "Minimum run/pause of the valve; 0 = off. Windows, locks and room off still act immediately.",
+                "min_off_minutes": "Minimum run/pause of the valve; 0 = off. Windows, locks and room off still act immediately.",
+                "trv_manual": "Adopt: a change at the thermostat is a manual override like on the card (default). Reset: Heizwerk sets its own value again. Two-point always resets.",
+                "knob_min_temperature": "Values set at the thermostat below this are discarded. Empty = automatic: lowest Zeitwerk profile value, else minimum set-point."
               }
             },
             "limits": {
@@ -258,7 +264,7 @@
             },
             "regulation": {
               "name": "Regulation (advanced)",
-              "description": "How the set-point and the room temperature reach the thermostats. Use either sending the room temperature or offset, never both.",
+              "description": "How the set-point and the room temperature reach the thermostats. Use either sending the room temperature or offset, never both. With two-point a knob turn is always reset.",
               "data": {
                 "regulation": "Regulation",
                 "send_temperature": "Send room temperature to thermostats",
@@ -266,16 +272,22 @@
                 "hysteresis_low": "Hysteresis below",
                 "hysteresis_high": "Hysteresis above",
                 "heat_setpoint": "Thermostat set-point while heating",
-                "trv_manual": "Turning the thermostat knob"
+                "min_on_minutes": "Minimum valve on time",
+                "min_off_minutes": "Minimum valve off time",
+                "trv_manual": "Turning the thermostat knob",
+                "knob_min_temperature": "Accept knob values from"
               },
               "data_description": {
-                "regulation": "Set-point: thermostat regulates itself (recommended). Offset: adds thermostat reading minus room sensor, only without sending the room temperature. Two-point: valve open/closed by hysteresis.",
+                "regulation": "Set-point: thermostat regulates itself (recommended). Offset: adds thermostat reading minus room sensor, only without sending the room temperature. Two-point: valve open/closed by hysteresis; a knob turn is then always reset.",
                 "send_temperature": "Heizwerk finds each thermostat's external temperature input (number.…_external_temperature_input) and sends the room sensor value (only with a room sensor). Sonoff TRVZB: measuring source remote_temperature in Zigbee2MQTT. Default on.",
                 "correction": "Added to the set-point sent to the thermostats, e.g. -0.5 K. Default 0; keep 0 while sending the room temperature.",
                 "hysteresis_low": "Heat when the room is this much below the target. Default 0.5 K.",
-                "hysteresis_high": "Stop heating when the room reaches target plus this. Default 0 K.",
+                "hysteresis_high": "Off from target + value; negative = off before the target (against overshoot). Default 0 K.",
                 "heat_setpoint": "Sent to the thermostat while heating so the valve opens fully. Default 24 °C.",
-                "trv_manual": "Adopt: a change at the thermostat is a manual override like on the card (default). Reset: Heizwerk sets its own value again."
+                "min_on_minutes": "Minimum run/pause of the valve; 0 = off. Windows, locks and room off still act immediately.",
+                "min_off_minutes": "Minimum run/pause of the valve; 0 = off. Windows, locks and room off still act immediately.",
+                "trv_manual": "Adopt: a change at the thermostat is a manual override like on the card (default). Reset: Heizwerk sets its own value again. Two-point always resets.",
+                "knob_min_temperature": "Values set at the thermostat below this are discarded. Empty = automatic: lowest Zeitwerk profile value, else minimum set-point."
               }
             },
             "limits": {
@@ -426,6 +438,10 @@
     "sensor_select_not_remote": {
       "title": "Heizwerk: thermostat {trv} does not measure with the room sensor",
       "description": "The measuring source {select} is \"{state}\" instead of remote_temperature. Set it back in Zigbee2MQTT or HA (select.select_option with remote_temperature). Heizwerk does not change it itself."
+    },
+    "trv_rejects_command": {
+      "title": "Heizwerk: thermostat {trv} does not take over the command",
+      "description": "Room {room}: {trv} did not take over {command} three times within 10 minutes, or dropped it again right away. Heizwerk pauses repeating until the 10-minute window ends and then tries again.\n\nCheck the thermostat's radio link, battery and child lock. This notice disappears once the thermostat keeps the value for 2 minutes."
     }
   }
 }

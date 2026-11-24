@@ -155,6 +155,11 @@ class RoomInputs:
     hysteresis_high: float = 0.0
     heat_setpoint: float = 24.0
     two_point_on: bool = False
+    # Minimum run / pause of the valve (seconds, 0 = off) and time since the
+    # last two-point switch (None = unknown, e.g. right after start).
+    min_on_seconds: float = 0.0
+    min_off_seconds: float = 0.0
+    two_point_elapsed: float | None = None
 
 
 @dataclass(slots=True)
@@ -270,6 +275,13 @@ def decide(inputs: RoomInputs) -> Decision:
             inputs.hysteresis_high,
             inputs.two_point_on,
         )
+        on = hold_two_point(
+            on,
+            inputs.two_point_on,
+            inputs.two_point_elapsed,
+            inputs.min_on_seconds,
+            inputs.min_off_seconds,
+        )
         commands = [
             Command(
                 t.entity_id,
@@ -311,6 +323,27 @@ def two_point_state(
     if current >= target + high:
         return False
     return was_on
+
+
+def hold_two_point(
+    on: bool,
+    was_on: bool,
+    elapsed: float | None,
+    min_on: float,
+    min_off: float,
+) -> bool:
+    """Keep the valve state for its minimum run / pause time.
+
+    Locks, "room off" and frost protection are decided before two-point
+    regulation, so they always act immediately.
+    """
+    if on == was_on or elapsed is None:
+        return on
+    if was_on and elapsed < min_on:
+        return True
+    if not was_on and elapsed < min_off:
+        return False
+    return on
 
 
 def room_target_from_trv(

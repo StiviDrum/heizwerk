@@ -45,9 +45,12 @@ from .const import (
     CONF_HUMIDITY_THRESHOLD,
     CONF_HYSTERESIS_HIGH,
     CONF_HYSTERESIS_LOW,
+    CONF_KNOB_MIN,
     CONF_LOCK_ENTITIES,
     CONF_LOCK_MODE,
     CONF_MAX_TEMP,
+    CONF_MIN_OFF,
+    CONF_MIN_ON,
     CONF_MIN_TEMP,
     CONF_MOLD_SENSOR,
     CONF_NAME,
@@ -76,6 +79,8 @@ from .const import (
     DEFAULT_HYSTERESIS_HIGH,
     DEFAULT_HYSTERESIS_LOW,
     DEFAULT_MAX_TEMP,
+    DEFAULT_MIN_OFF,
+    DEFAULT_MIN_ON,
     DEFAULT_MIN_TEMP,
     DEFAULT_SUMMER_LOCK_MINUTES,
     DEFAULT_SUMMER_LOCK_TEMPERATURE,
@@ -176,12 +181,20 @@ ROOM_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_HYSTERESIS_LOW,
         CONF_HYSTERESIS_HIGH,
         CONF_HEAT_SETPOINT,
+        CONF_MIN_ON,
+        CONF_MIN_OFF,
         CONF_TRV_MANUAL,
+        CONF_KNOB_MIN,
     ),
     SECTION_LIMITS: (CONF_DEFAULT_TARGET, CONF_MIN_TEMP, CONF_MAX_TEMP),
 }
 
 _TWO_POINT: Any = {"field": CONF_REGULATION, "value": REGULATION_TWO_POINT}
+_NOT_TWO_POINT: Any = {
+    "field": CONF_REGULATION,
+    "operator": "not_eq",
+    "value": REGULATION_TWO_POINT,
+}
 
 
 def _is_two_point(data: Mapping[str, Any]) -> bool:
@@ -199,6 +212,14 @@ ROOM_HIDEABLE: dict[str, tuple[Any, Callable[[Mapping[str, Any]], bool]]] = {
     CONF_HYSTERESIS_LOW: (DEFAULT_HYSTERESIS_LOW, lambda d: not _is_two_point(d)),
     CONF_HYSTERESIS_HIGH: (DEFAULT_HYSTERESIS_HIGH, lambda d: not _is_two_point(d)),
     CONF_HEAT_SETPOINT: (DEFAULT_HEAT_SETPOINT, lambda d: not _is_two_point(d)),
+    CONF_MIN_ON: (DEFAULT_MIN_ON, lambda d: not _is_two_point(d)),
+    CONF_MIN_OFF: (DEFAULT_MIN_OFF, lambda d: not _is_two_point(d)),
+    # Order matters: trv_manual is filled before knob_min checks it.
+    CONF_TRV_MANUAL: (TRV_MANUAL_ADOPT, _is_two_point),
+    CONF_KNOB_MIN: (
+        None,
+        lambda d: _is_two_point(d) or d.get(CONF_TRV_MANUAL) != TRV_MANUAL_ADOPT,
+    ),
     CONF_WALL_TEMPERATURE_SENSOR: (None, lambda d: bool(d.get(CONF_MOLD_SENSOR))),
 }
 
@@ -415,14 +436,23 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                             CONF_HYSTERESIS_HIGH,
                             default=DEFAULT_HYSTERESIS_HIGH,
                             visible=_TWO_POINT,
-                        ): _number(0, 3, 0.1, "K"),
+                        ): _number(-2, 3, 0.1, "K"),
                         VisibleRequired(
                             CONF_HEAT_SETPOINT,
                             default=DEFAULT_HEAT_SETPOINT,
                             visible=_TWO_POINT,
                         ): _number(5, 35, 0.5, "°C"),
-                        probatio.Required(
-                            CONF_TRV_MANUAL, default=TRV_MANUAL_ADOPT
+                        VisibleRequired(
+                            CONF_MIN_ON, default=DEFAULT_MIN_ON, visible=_TWO_POINT
+                        ): _number(0, 60, 1, "min"),
+                        VisibleRequired(
+                            CONF_MIN_OFF, default=DEFAULT_MIN_OFF, visible=_TWO_POINT
+                        ): _number(0, 60, 1, "min"),
+                        # Two-point always resets a knob turn (runtime).
+                        VisibleRequired(
+                            CONF_TRV_MANUAL,
+                            default=TRV_MANUAL_ADOPT,
+                            visible=_NOT_TWO_POINT,
                         ): selector.SelectSelector(
                             selector.SelectSelectorConfig(
                                 options=[TRV_MANUAL_ADOPT, TRV_MANUAL_RESET],
@@ -432,6 +462,13 @@ def _room_schema(hass: HomeAssistant) -> probatio.Schema:
                                 mode=selector.SelectSelectorMode.DROPDOWN,
                             )
                         ),
+                        VisibleOptional(
+                            CONF_KNOB_MIN,
+                            visible=[
+                                {"field": CONF_TRV_MANUAL, "value": TRV_MANUAL_ADOPT},
+                                _NOT_TWO_POINT,
+                            ],
+                        ): _number(5, 25, 0.5, "°C"),
                     }
                 ),
                 _COLLAPSED,
@@ -629,6 +666,9 @@ async def _async_room_data(
         legacy := stored.get(CONF_EXTERNAL_TEMPERATURE_ENTITIES)
     ):
         data[CONF_EXTERNAL_TEMPERATURE_ENTITIES] = legacy
+    for key in (CONF_MIN_ON, CONF_MIN_OFF):
+        if key in data:
+            data[key] = int(data[key])
     if actions := cv.ensure_list(data.pop(CONF_RESUME_ACTION, None)):
         data[CONF_RESUME_ACTION] = actions
     if not data.get(CONF_ZEITWERK_PLAN):
