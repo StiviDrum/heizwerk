@@ -1,6 +1,6 @@
 # Heizwerk – Aufgaben
 
-Stand nach jeder Aufgabe aktualisieren. Aktuelle Version: **0.5.1**. Arbeits-Branch: `claude/heizwerk-0.1` (Name historisch), Standard-Branch `main`.
+Stand nach jeder Aufgabe aktualisieren. Aktuelle Version: **0.5.2**. Arbeits-Branch: `claude/heizwerk-0.1` (Name historisch), Standard-Branch `main`.
 Die Abschnitte unten sind die Historie je Version; maßgeblich für den Ist-Stand sind README und SPEC.
 
 ## M0 – Gerüst
@@ -119,6 +119,19 @@ kein Gerät).
 - [x] Brand: HA-Icons aus den SVGs gerendert, `docs/brand` ins Repo
 - [ ] Brand-Dateien laut BRANDING.md noch nicht vorhanden: transparentes Icon, dunkles Logo, README-PNGs
 - [ ] Social Preview in GitHub hochladen (Settings → General, keine API)
+
+## 0.5.2 – Störfall Handwert 6 °C (Steven 2026-11-24)
+- [x] Echo-Fix: Meldungen innerhalb 30 s nach eigenem Befehl kein Drehen; Wert von vor dem Befehl 5 min lang veraltet; Wunschwert = Zustimmung
+- [x] Zweipunkt: Drehen am Thermostat immer zurückgesetzt (Feld im Dialog ausgeblendet)
+- [x] Plausibilität: Sprung > 5 K verworfen; Untergrenze `knob_min_temperature` (automatisch: niedrigster Zeitwerk-Profilwert, sonst min_temp)
+- [x] Wiederholungsgrenze 3 × / 10 min + Reparaturhinweis (Gerätefehler zählen, Nutzereingriffe nicht)
+- [x] Zweipunkt: obere Hysterese negativ erlaubt, Mindestlauf/-pause (Opt-in), keine Haltezeit nach Sperre
+- [x] Keine Befehle vor HA-Start; Zweipunkt-Zustand aus erster TRV-Meldung
+- [x] Logging + Ereignisse knob_adopted/knob_rejected + Attribut last_knob
+- [x] Doku vollständig zweisprachig (README, CHANGELOG, SPEC.md/SPEC.en.md, BRANDING)
+- Punkt 4 (TRV-Soll 30/7 nicht anzeigen) gestrichen: keine Karte liest den TRV-Wert.
+Arbeitsteilung: Dialog-Agent, Prüf-Agent (3 Runden, 8 Befunde behoben), neuer Doku-Agent (Nr. 4 von 4);
+Laufzeit, Tests, Dev-Test (Störfall per REST-Zustand nachgestellt) Orchestrator. 141 + 42 Tests.
 
 ## Offen / später
 - [ ] Vorheizen („Vorlauf ab …“ im Mockup) – braucht Lernlogik, bisher bewusst nicht umgesetzt

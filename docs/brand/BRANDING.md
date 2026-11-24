@@ -1,6 +1,8 @@
 <!-- claude: 2026-11-18 – Heizwerk-Identität, angeglichen an Zeitwerk und Läutwerk (Repos StiviDrum/zeitwerk, StiviDrum/laeutwerk, nur gelesen). Nur Dateien im Projektordner, nichts in HA oder im Repo. -->
 # Heizwerk – Identität
 
+> Deutsch (maßgebliche Fassung) · [English](BRANDING.en.md)
+
 **Claim:** *Zeitwerk plant, Heizwerk regelt.*
 
 ## Familienprinzip (aus den Schwesterprojekten übernommen)
@@ -53,7 +55,7 @@ Vorschlag (Englisch wie bei den Schwesterprojekten): *Room heating control with 
 Wie bei den Schwesterprojekten: sachlich, ruhig, technisch genau, Du-Form, kurze Sätze, Fachbegriffe (Soll, Ist, Vorlauf, Sperre) ohne Erklärung, keine Marketingsprache.
 Beispiele: „Küche heizt auf 21,0 °C, Fenster offen – Heizung gesperrt.“ · „Lüften empfohlen: Wandfeuchte 0,74.“
 
-## Stand im Repo (0.5.1)
+## Stand im Repo (0.5.2)
 <!-- claude: 2026-11-18 – Ablage im Repo ergänzt -->
 - Vorhanden: `docs/brand/heizwerk-icon.svg`, `heizwerk-logo-light.svg`, `social-preview.png`.
 - `custom_components/heizwerk/brand/`: `icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png` – aus den SVGs gerendert (Chromium, transparent).
